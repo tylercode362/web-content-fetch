@@ -1,0 +1,40 @@
+schema: spec-driven
+
+context: |
+  web-content-fetch 是 local-first 的小說／漫畫下載編排服務。它提供任務頁面、工作佇列、Bridge 綁定、章節順序、圖片資產管理與 EPUB 輸出；真實 Chrome 的內容擷取由 chrome-bridge 負責。
+
+  Canonical boundaries:
+  - web-content-fetch owns DownloadJob, queue state, progress events and EPUB output.
+  - chrome-bridge owns browser tab lifecycle, supported-site content extraction and asset evidence.
+  - Threads、X、YouTube 的既有 Browser Read contract 是不可破壞的外部相容性約束。
+  - Pairing code、Bridge service token、browser session、job state、asset bytes 與 output files are separate capabilities.
+
+  Security baseline:
+  - Loopback is not authentication; UI/API mutation requires exact Origin, CSRF and session checks.
+  - User URL, page HTML, chapter text, image metadata and site content are untrusted input.
+  - Logs exclude cookies, tokens, pairing codes, raw content, full image bytes and sensitive query values.
+  - All queue, page, asset, byte, time and retry budgets are bounded; overflow fails with an explicit diagnostic.
+  - No Docker socket, Chrome profile, host credential, SSH key, GitHub auth or arbitrary executable is mounted.
+  - Telemetry is disabled by default; fixtures use synthetic data.
+
+  Compatibility:
+  - Public API and Bridge protocol changes require OpenSpec, versioning, compatibility tests and documented unsupported behavior.
+  - New novel and manga workflows are additive and must not disable or change existing Chrome Bridge features.
+
+rules:
+  proposal:
+    - 使用臺灣繁體中文與臺灣慣用語。
+    - 明列 scope、non-goals、privacy impact、compatibility impact、rollback 與 stop conditions。
+    - 說明 web-content-fetch 與 chrome-bridge 的責任邊界，不把 queue 或 EPUB ownership 重複放入兩邊。
+  design:
+    - 必須說明 component flow、trust boundary、credential separation、failure modes 與 rejected alternatives。
+    - 必須定義 Bridge protocol version、unsupported behavior、retry/idempotency 與 bounded resource policy。
+    - 必須說明 lazy-load、next navigation、overlay interference 與 missing-asset fail-closed 行為。
+  specs:
+    - 每個 requirement 使用 SHALL 或 MUST，並包含 Given／When／Then scenario。
+    - Security/privacy 必須包含 negative acceptance scenario。
+    - 進度串流（目前為同源 SSE/EventSource；日後可替換 WebSocket）reconnect 必須回到 persisted job snapshot，不可只依賴事件記憶體。
+    - EPUB image fixture 必須驗證 inline width、height、viewport、reading order 與 missing asset handling。
+  tasks:
+    - 依 vertical slice 排序；未取得 build、test、Compose、OpenSpec 與 security evidence 不得勾選完成。
+    - Public protocol 同步更新 schema、client、server、fixture、compatibility test 與文件。
