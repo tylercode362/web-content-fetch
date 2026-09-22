@@ -4,12 +4,20 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 const sharp = require('sharp');
-const { BridgeClient } = require('../bridge-client');
+const { BridgeClient, BridgeTransportError } = require('../bridge-client');
 const { normalizeConfig } = require('../binding-store');
 const { DownloadOrchestrator, isClearable } = require('../job-orchestrator');
 
 test('batch cleanup policy selects failed and cancelled jobs only', () => {
   assert.deepEqual(['queued', 'running', 'paused', 'complete', 'cancelled', 'error'].filter(isClearable), ['cancelled', 'error']);
+});
+
+test('Bridge network failures use a recoverable transport diagnostic', async () => {
+  const client = new BridgeClient({ baseUrl: 'http://127.0.0.1:1' });
+  await assert.rejects(
+    client.json('/v1/secure/key'),
+    error => error instanceof BridgeTransportError && error.status === 0 && error.message === 'bridge_transport_failed'
+  );
 });
 
 test('pairing updates the single WCF Bridge binding', async () => {

@@ -223,17 +223,29 @@ class BridgeClient {
   }
 
   async json(path, body, signal) {
-    const response = await fetch(this.baseUrl + path, body === undefined
-      ? { headers: { connection: 'close' }, signal }
-      : {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', connection: 'close' },
-        body: JSON.stringify(body),
-        signal
-      });
+    let response;
+    try {
+      response = await fetch(this.baseUrl + path, body === undefined
+        ? { headers: { connection: 'close' }, signal }
+        : {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', connection: 'close' },
+          body: JSON.stringify(body),
+          signal
+        });
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      const transportError = new BridgeTransportError(0, 'bridge_transport_failed');
+      transportError.cause = error;
+      throw transportError;
+    }
     if (!response.ok) throw new BridgeTransportError(response.status, 'bridge_transport_failed');
     return response.json();
   }
+}
+
+function isAbortError(error) {
+  return error?.name === 'AbortError' || error?.code === 'ABORT_ERR';
 }
 
 function abortError() {

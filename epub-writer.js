@@ -174,6 +174,15 @@ async function optimizeImage(asset, index) {
       .toBuffer();
     const optimizedMetadata = await sharp(output, { failOn: 'error' }).metadata();
     if (!optimizedMetadata.width || !optimizedMetadata.height) throw new Error('optimized_image_metadata_invalid');
+    const swapsOrientation = [5, 6, 7, 8].includes(Number(metadata.orientation));
+    const expectedWidth = swapsOrientation ? metadata.height : metadata.width;
+    const expectedHeight = swapsOrientation ? metadata.width : metadata.height;
+    const expectedRatio = expectedWidth / expectedHeight;
+    const optimizedRatio = optimizedMetadata.width / optimizedMetadata.height;
+    if (!Number.isFinite(expectedRatio) || !Number.isFinite(optimizedRatio) ||
+      Math.abs((optimizedRatio / expectedRatio) - 1) > 0.01) {
+      throw new Error('image_aspect_ratio_changed');
+    }
     if (output.length > MAX_IMAGE_BYTES) throw new Error(`asset_${index + 1}_optimized_size_invalid`);
     return {
       data: output,
@@ -262,7 +271,7 @@ function rewriteNovelImages(html, images, baseUrl) {
     const key = normalizeImageSource(source, baseUrl);
     const image = key ? images.get(key) : null;
     if (!image) throw new Error('novel_image_asset_missing');
-    return `<img src="../images/${image.filename}" alt="${image.alt || ''}" width="${image.width}" height="${image.height}" style="display:block;max-width:100%;height:auto;margin:1em auto"/>`;
+    return renderInlineImage(image, `../images/${image.filename}`, '1em auto');
   });
 }
 
@@ -290,8 +299,23 @@ function renderNovelXhtml(entry) {
 
 function renderImageXhtml(entry, imageHref) {
   const image = entry.image;
+  const width = Number(image.width);
+  const height = Number(image.height);
   return `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-Hant" lang="zh-Hant"><head><title>${escapeXml(entry.title)}</title><meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0"/></head><body style="margin:0;padding:0;text-align:center;background:#fff"><img src="../${imageHref}" alt="${image.alt}" width="${image.width}" height="${image.height}" style="display:block;max-width:100%;height:auto;margin:0 auto"/></body></html>`;
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-Hant" lang="zh-Hant"><head><title>${escapeXml(entry.title)}</title><meta name="viewport" content="width=${width}, height=${height}"/></head><body style="margin:0;padding:0;text-align:center;background:#fff">${renderKoboSvg(image, `../${imageHref}`)}</body></html>`;
+}
+
+function renderInlineImage(image, imageHref, margin) {
+  const width = Number(image.width);
+  const height = Number(image.height);
+  const imageClass = width > height ? 'widthImage' : 'heightImage';
+  return `<img src="${imageHref}" alt="${image.alt || ''}" width="${width}" height="${height}" class="${imageClass}" style="display:block;width:${width}px;height:${height}px;margin:${margin};"/>`;
+}
+
+function renderKoboSvg(image, imageHref) {
+  const width = Number(image.width);
+  const height = Number(image.height);
+  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet" style="display:block;margin:0 auto;"><image x="0" y="0" width="${width}" height="${height}" xlink:href="${imageHref}"/></svg>`;
 }
 
 function renderNavXhtml(title, items) {

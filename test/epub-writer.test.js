@@ -144,6 +144,7 @@ test('novel output embeds verified inline images with Kobo dimensions', async ()
   assert.match(chapter, /圖片後文字/);
   assert.match(chapter, /src="\.\.\/images\/novel-image-0001\.jpg"/);
   assert.match(chapter, /width="1404" height="790"/);
+  assert.match(chapter, /style="display:block;width:1404px;height:790px;margin:1em auto;"/);
   assert.doesNotMatch(chapter, /readpai\.com/);
   assert.equal(await epub.file('OEBPS/images/novel-image-0001.jpg').async('nodebuffer').then(value => value.length > 0), true);
   assert.equal(result.imageCount, 1);
@@ -159,17 +160,25 @@ test('manga output optimizes images and writes Kobo inline dimensions in order',
     chapterIndex: 0,
     images: [
       { data: await png(2808, 3744, '#ff0000'), alt: '頁一' },
-      { data: await png(900, 1200, '#00ff00'), alt: '頁二' }
+      { data: await png(900, 1200, '#00ff00'), alt: '頁二' },
+      { data: await png(2400, 1000, '#0000ff'), alt: '頁三' }
     ]
   });
   const epub = await readZip(result.epubPath);
   const first = await epub.file('OEBPS/text/page-0001.xhtml').async('text');
   const second = await epub.file('OEBPS/text/page-0002.xhtml').async('text');
+  const third = await epub.file('OEBPS/text/page-0003.xhtml').async('text');
   assert.match(first, /width="1404" height="1872"/);
   assert.match(second, /width="900" height="1200"/);
-  assert.match(first, /viewport/);
+  assert.match(third, /width="1404" height="585"/);
+  assert.match(first, /<svg[^>]+viewBox="0 0 1404 1872"[^>]+width="1404" height="1872"/);
+  assert.match(first, /<image x="0" y="0" width="1404" height="1872" xlink:href="\.\.\/images\/image-0001\.jpg"/);
+  assert.match(third, /viewBox="0 0 1404 585"/);
+  assert.doesNotMatch(third, /aspect-ratio|object-fit|width:100%|height:auto/);
+  assert.match(first, /<meta name="viewport" content="width=1404, height=1872"/);
   assert.match(first, /images\/image-0001\.jpg/);
   assert.match(second, /images\/image-0002\.jpg/);
-  assert.equal(result.pageCount, 2);
+  assert.match(third, /images\/image-0003\.jpg/);
+  assert.equal(result.pageCount, 3);
   assert.equal(await fs.stat(result.kepubPath).then(stat => stat.isFile()), true);
 });

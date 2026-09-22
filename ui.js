@@ -29,7 +29,7 @@
     Object.entries(props).forEach(([key, item]) => {
       if (key === 'className') value.className = item;
       else if (key === 'textContent') value.textContent = item;
-      else if (key.startsWith('data-')) value.setAttribute(key, item);
+      else if (key.startsWith('data-') || key.startsWith('aria-')) value.setAttribute(key, item);
       else value[key] = item;
     });
     children.forEach(child => value.append(child));
@@ -109,12 +109,20 @@
 
   const appendDownload = (parent, download) => {
     if (!download?.href) return;
-    parent.append(node('a', {
+    const format = String(download.format || '檔案');
+    const filename = String(download.filename || '下載');
+    const link = node('a', {
       className: 'download-link',
       href: prefixed(download.href),
       download: download.filename || '',
-      textContent: String(download.format || '檔案') + ' · ' + String(download.filename || '下載')
-    }));
+      title: filename,
+      'aria-label': format + '：' + filename
+    });
+    link.append(
+      node('span', { className: 'download-format', textContent: format }),
+      node('span', { className: 'download-filename', textContent: filename })
+    );
+    parent.append(link);
   };
 
   const appendActions = (parent, job) => {
@@ -178,7 +186,7 @@
       node('span', { textContent: '類型：' + (job.kind || '-') }),
       node('span', { textContent: '章節：' + (job.chapterCount || job.progress?.chapterTotal || '-') })
     ]);
-    const left = node('div', {}, [
+    const left = node('div', { className: 'job-progress' }, [
       progressSummary,
       node('div', { className: 'progress-track' }, [bar])
     ]);
@@ -225,7 +233,7 @@
     const actions = node('div', { className: 'job-actions' });
     appendActions(actions, job);
     const identity = node('p', {
-      className: 'hint',
+      className: 'job-identity hint',
       textContent: 'binding ' + (job.bindingId || '-') +
         ' · browser ' + (job.browserClientId || '-') +
         ' · service ' + (job.serviceClientId || '-') +
@@ -241,9 +249,10 @@
         target,
         identity,
         node('div', { className: 'job-grid' }, [
-          node('div', {}, [left, actions]),
+          left,
           outputPanel
-        ])
+        ]),
+        actions
       ])
     ]);
   };
