@@ -378,7 +378,14 @@ const server = http.createServer(async (request, response) => {
       if (action === 'pause') orchestrator.pause(job.id);
       else if (action === 'resume') orchestrator.resume(job.id);
       else if (action === 'cancel') await orchestrator.cancel(job.id);
-      else await orchestrator.delete(job.id);
+      else {
+        const deletedJob = await orchestrator.delete(job.id);
+        return sendJson(response, 200, {
+          deleted: true,
+          jobId: job.id,
+          removedOutputs: deletedJob?.deletedOutputCount || 0
+        });
+      }
     } catch (error) {
       return sendJson(response, 422, { error: safeDiagnostic(error) });
     }

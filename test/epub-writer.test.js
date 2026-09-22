@@ -5,7 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const JSZip = require('jszip');
 const sharp = require('sharp');
-const { writeNovelEpub, writeMangaChapterEpub, sanitizeNovelHtml } = require('../epub-writer');
+const { cleanBookTitle, writeNovelEpub, writeMangaChapterEpub, sanitizeNovelHtml } = require('../epub-writer');
 
 async function tempOutput() {
   return fs.mkdtemp(path.join(os.tmpdir(), 'wcf-epub-'));
@@ -40,6 +40,30 @@ test('novel output contains sanitized chapters and a kepub companion', async () 
   assert.match(second, /結尾/);
   assert.equal(await fs.stat(result.kepubPath).then(stat => stat.isFile()), true);
   assert.equal(sanitizeNovelHtml('<p>x</p><script>bad</script>').includes('script'), false);
+});
+
+test('book titles remove site suffixes and produce Kobo-safe short filenames', async () => {
+  assert.equal(cleanBookTitle('OVERLORD不死者之王小說線上看_丸山くがね作品_Fami通文庫_嗶哩輕小說'), 'OVERLORD不死者之王');
+  assert.equal(cleanBookTitle('勇者斗惡龍 達伊的大冒險 勇者阿邦和獄炎的魔王漫畫_勇者斗惡龍 達伊的大冒險 - 看漫畫手机版'), '勇者斗惡龍 達伊的大冒險 勇者阿邦和獄炎的魔王');
+  assert.equal(cleanBookTitle('勇者斗惡龍 達伊的大冒險 最新漫畫綫上觀看 - 無限動漫 8comic.com'), '勇者斗惡龍 達伊的大冒險');
+
+  const outputDir = await tempOutput();
+  const novel = await writeNovelEpub({
+    outputDir,
+    title: 'OVERLORD不死者之王小說線上看_丸山くがね作品_Fami通文庫_嗶哩輕小說',
+    chapters: [{ title: '第一章｜嗶哩輕小說', contentHtml: '<p>正文</p>' }]
+  });
+  assert.equal(path.basename(novel.epubPath), 'OVERLORD不死者之王.epub');
+  assert.equal(novel.title, 'OVERLORD不死者之王');
+
+  const manga = await writeMangaChapterEpub({
+    outputDir,
+    title: '勇者斗惡龍 達伊的大冒險 最新漫畫綫上觀看 - 無限動漫 8comic.com',
+    chapterTitle: '第 1 話｜8comic.com',
+    chapterIndex: 0,
+    images: [{ data: await png(900, 1200, '#00ff00'), alt: '頁一' }]
+  });
+  assert.equal(path.basename(manga.epubPath), '勇者斗惡龍-達伊的大冒險-chapter-0001.epub');
 });
 
 test('novel and manga outputs exclude advertisement markup and assets', async () => {

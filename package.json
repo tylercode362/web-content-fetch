@@ -1,6 +1,6 @@
 {
   "name": "web-content-fetch",
-  "version": "0.5.0",
+  "version": "0.5.2",
   "private": true,
   "description": "Local-first novel and manga download orchestration service",
   "main": "server.js",

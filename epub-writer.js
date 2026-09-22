@@ -14,6 +14,29 @@ const KOBO_MAX_WIDTH = Number(process.env.WEB_CONTENT_FETCH_KOBO_MAX_WIDTH || 14
 const KOBO_MAX_HEIGHT = Number(process.env.WEB_CONTENT_FETCH_KOBO_MAX_HEIGHT || 1872);
 const AD_MARKER_RE = /(?:^|[^a-z0-9])(?:ad|ads|advert|advertisement|sponsor|sponsored|banner|popup|popunder|interstitial|promo|promotion|commercial)(?:$|[^a-z0-9])/i;
 const AD_TEXT_RE = /(?:廣告|贊助|彈窗|彈出)/i;
+const MAX_TITLE_LENGTH = 160;
+const MAX_FILENAME_STEM_LENGTH = 80;
+const TITLE_SITE_SUFFIX_RE = /(?:最新漫畫|最新漫画|小說|小説|漫畫|漫画)(?:線上|线上|綫上|在線|在线)?(?:看|觀看|观看|閱讀|阅读)?(?:[_\s|｜—–-]|$)|(?:看漫畫|看漫画|無限動漫|无限动漫|嗶哩輕小說|哔哩轻小说|8comic(?:\.com)?|Fami通文庫|Fami通文库)/iu;
+const TITLE_DOMAIN_RE = /(?:https?:\/\/|www\.)[^\s|｜]+|\b[\p{L}\p{N}-]+\.(?:com|net|org|tw|cn|cc|me|io)(?:\/[^\s|｜]*)?/giu;
+
+function cleanBookTitle(value, fallback = 'book') {
+  let title = String(value || '')
+    .normalize('NFKC')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(TITLE_DOMAIN_RE, ' ')
+    .trim();
+  const suffix = title.search(TITLE_SITE_SUFFIX_RE);
+  if (suffix > 0) title = title.slice(0, suffix);
+  title = title
+    .replace(/^[\s《「『【〔［({<]+|[\s》」』】〕］)}>]+$/gu, '')
+    .replace(/[^\p{L}\p{N}\p{M}\s-]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .replace(/-{2,}/g, '-')
+    .trim()
+    .slice(0, MAX_TITLE_LENGTH)
+    .trim();
+  return title || fallback;
+}
 
 function isAdvertisementAsset(asset) {
   const values = [
@@ -25,6 +48,7 @@ function isAdvertisementAsset(asset) {
 
 async function writeNovelEpub({ outputDir, title, chapters }) {
   if (!Array.isArray(chapters) || chapters.length === 0) throw new Error('novel_has_no_chapters');
+  const bookTitle = cleanBookTitle(title, 'Novel');
   const entries = [];
   const images = [];
   const imageBySource = new Map();
@@ -53,21 +77,21 @@ async function writeNovelEpub({ outputDir, title, chapters }) {
     const rewritten = rewriteNovelImages(sanitized, chapterImages, chapter.baseUrl || chapter.url);
     entries.push({
       id: `chapter-${String(index + 1).padStart(4, '0')}`,
-      title: String(chapter.title || `第 ${index + 1} 章`).slice(0, 500),
+      title: cleanBookTitle(chapter.title || `第 ${index + 1} 章`, `第 ${index + 1} 章`),
       html: rewritten
     });
   }
   if (entries.some(entry => !entry.html.trim())) throw new Error('novel_chapter_has_no_content');
-  const filename = `${slugify(title || 'novel')}.epub`;
+  const filename = `${slugify(bookTitle)}.epub`;
   const epubPath = path.join(outputDir, filename);
-  await writeEpub({ outputDir, filename, title: title || 'Novel', entries, images });
+  await writeEpub({ outputDir, filename, title: bookTitle, entries, images });
   const kepubPath = await convertToKepub(epubPath);
   return {
     epubPath,
     kepubPath,
     files: [epubPath, kepubPath],
     filename,
-    title: title || 'Novel',
+    title: bookTitle,
     chapterCount: entries.length,
     imageCount: images.length
   };
@@ -76,22 +100,24 @@ async function writeNovelEpub({ outputDir, title, chapters }) {
 async function writeMangaChapterEpub({ outputDir, title, chapterTitle, chapterIndex, images }) {
   const contentImages = Array.isArray(images) ? images.filter(image => !isAdvertisementAsset(image)) : [];
   if (contentImages.length === 0) throw new Error('manga_chapter_has_no_images');
+  const bookTitle = cleanBookTitle(title, '漫畫');
+  const cleanChapterTitle = cleanBookTitle(chapterTitle || `第 ${chapterIndex + 1} 章`, `第 ${chapterIndex + 1} 章`);
   const imageEntries = [];
   for (let index = 0; index < contentImages.length; index += 1) {
     imageEntries.push(await optimizeImage(contentImages[index], index));
   }
   const entries = imageEntries.map((image, index) => ({
     id: `page-${String(index + 1).padStart(4, '0')}`,
-    title: `${chapterTitle || title || '漫畫'} ${index + 1}`,
+    title: `${cleanChapterTitle} ${index + 1}`,
     image
   }));
-  const base = `${slugify(title || 'manga')}-chapter-${String(chapterIndex + 1).padStart(4, '0')}`;
+  const base = `${slugify(bookTitle)}-chapter-${String(chapterIndex + 1).padStart(4, '0')}`;
   const filename = `${base}.epub`;
   const epubPath = path.join(outputDir, filename);
   await writeEpub({
     outputDir,
     filename,
-    title: chapterTitle ? `${title || '漫畫'} - ${chapterTitle}` : `${title || '漫畫'} - ${chapterIndex + 1}`,
+    title: `${bookTitle} - ${cleanChapterTitle}`,
     entries
   });
   const kepubPath = await convertToKepub(epubPath);
@@ -100,7 +126,7 @@ async function writeMangaChapterEpub({ outputDir, title, chapterTitle, chapterIn
     kepubPath,
     files: [epubPath, kepubPath],
     filename,
-    title: chapterTitle || title || '漫畫',
+    title: cleanChapterTitle || bookTitle,
     pageCount: entries.length,
     imageEntries
   };
@@ -281,7 +307,11 @@ function escapeXml(value) {
 }
 
 function slugify(value) {
-  const normalized = String(value).normalize('NFKC').replace(/[^\p{L}\p{N}._-]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 100);
+  const normalized = cleanBookTitle(value, 'book')
+    .replace(/[^\p{L}\p{N}]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, MAX_FILENAME_STEM_LENGTH)
+    .replace(/^-+|-+$/g, '');
   return normalized || 'book';
 }
 
@@ -297,6 +327,7 @@ module.exports = {
   rewriteNovelImages,
   optimizeImage,
   sanitizeNovelHtml,
+  cleanBookTitle,
   writeMangaChapterEpub,
   writeNovelEpub
 };

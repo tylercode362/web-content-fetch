@@ -455,7 +455,8 @@ test('terminal job deletion removes its record, outputs and checkpoints', async 
     kind: 'novel',
     status: 'error',
     progress: { phase: 'failed', completed: 1, total: 1 },
-    outputs: ['overlord.epub']
+    outputs: ['overlord.epub'],
+    outputGroups: [{ chapterIndex: 0, files: ['overlord.kepub.epub'] }]
   };
   const jobs = new Map([[job.id, job]]);
   const orchestrator = new DownloadOrchestrator({
@@ -471,11 +472,37 @@ test('terminal job deletion removes its record, outputs and checkpoints', async 
   await orchestrator.writeJobManifest(job, 'OVERLORD', [{ url: job.url, title: '第一章' }]);
   await fs.mkdir(path.join(root, 'output'), { recursive: true });
   await fs.writeFile(path.join(root, 'output', 'overlord.epub'), 'epub');
+  await fs.writeFile(path.join(root, 'output', 'overlord.kepub.epub'), 'kepub');
 
-  await orchestrator.delete(job.id);
+  const deletedJob = await orchestrator.delete(job.id);
 
   assert.equal(jobs.has(job.id), false);
+  assert.equal(deletedJob.deletedOutputCount, 2);
   await assert.rejects(() => fs.access(path.join(root, 'output', 'overlord.epub')));
+  await assert.rejects(() => fs.access(path.join(root, 'output', 'overlord.kepub.epub')));
   await assert.rejects(() => fs.access(orchestrator.checkpointPath(job)));
   await assert.rejects(() => fs.access(orchestrator.stagePath(job)));
+});
+
+test('terminal deletion rejects unsafe grouped output and keeps the job record', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-delete-unsafe-'));
+  const job = {
+    id: 'job-terminal-delete-unsafe',
+    status: 'error',
+    outputs: [],
+    outputGroups: [{ chapterIndex: 0, files: ['../outside.epub'] }]
+  };
+  const jobs = new Map([[job.id, job]]);
+  const orchestrator = new DownloadOrchestrator({
+    jobs,
+    config: normalizeConfig({}),
+    saveConfig: async () => {},
+    outputDir: path.join(root, 'output'),
+    checkpointDir: path.join(root, 'checkpoints'),
+    update(value, change) { Object.assign(value, change); },
+    removeJob(jobId) { jobs.delete(jobId); }
+  });
+
+  await assert.rejects(() => orchestrator.delete(job.id), /job_output_path_invalid/);
+  assert.equal(jobs.has(job.id), true);
 });

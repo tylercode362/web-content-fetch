@@ -53,11 +53,16 @@ test('legacy manga outputs can be grouped after service upgrade', () => {
 
 test('queue source contains expandable jobs and structured download rendering', async () => {
   const source = await fs.readFile(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const uiSource = await fs.readFile(path.join(__dirname, '..', 'ui.js'), 'utf8');
   assert.match(source, /ui\.css/);
   assert.match(source, /outputGroups/);
   assert.match(source, /download-all/);
   assert.match(source, /clear-terminal/);
   assert.doesNotMatch(source, /decorateJobs=/);
+  assert.match(uiSource, /node\('summary'/);
+  assert.match(uiSource, /node\('details'/);
+  assert.match(uiSource, /pendingActions/);
+  assert.match(uiSource, /delete_not_confirmed/);
 });
 
 test('reusable deployment script is confirmation-gated and health-checked', async () => {

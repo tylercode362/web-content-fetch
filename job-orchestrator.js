@@ -4,7 +4,7 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { BridgeClient, normalizeBaseUrl } = require('./bridge-client');
 const { getBinding, isUuid, publicBinding } = require('./binding-store');
-const { writeMangaChapterEpub, writeNovelEpub } = require('./epub-writer');
+const { cleanBookTitle, writeMangaChapterEpub, writeNovelEpub } = require('./epub-writer');
 
 const MAX_CHAPTERS = 2000;
 const MAX_PAGES = 512;
@@ -207,10 +207,9 @@ class DownloadOrchestrator {
   }
 
   async removeJobFiles(job) {
-    await Promise.all([
-      fsp.rm(this.checkpointPath(job), { recursive: true, force: true }),
-      fsp.rm(this.stagePath(job), { recursive: true, force: true })
-    ]);
+    const paths = [this.checkpointPath(job), this.stagePath(job)];
+    await Promise.all(paths.map(filePath => fsp.rm(filePath, { recursive: true, force: true })));
+    await Promise.all(paths.map(filePath => this.assertPathMissing(filePath, 'job_delete_incomplete')));
   }
 
   async publishOutputs(job, files, options = {}) {
@@ -261,17 +260,36 @@ class DownloadOrchestrator {
     this.update(job, { outputs, outputGroups: groups });
   }
 
-  async removePublishedOutputs(job) {
-    const root = path.resolve(this.outputDir);
-    const values = [...new Set([
+  publishedOutputNames(job) {
+    return [...new Set([
       ...(Array.isArray(job.outputs) ? job.outputs : []),
       ...(Array.isArray(job.outputGroups) ? job.outputGroups.flatMap(group => group?.files || []) : [])
-    ])];
-    await Promise.all(values.map(async value => {
-      const candidate = path.resolve(root, String(value || ''));
-      if (candidate === root || !candidate.startsWith(root + path.sep) || path.basename(candidate) !== String(value || '')) throw new Error('job_output_path_invalid');
-      await fsp.rm(candidate, { force: true });
-    }));
+    ].map(value => String(value || '')).filter(Boolean))];
+  }
+
+  publishedOutputPaths(job) {
+    const root = path.resolve(this.outputDir);
+    return this.publishedOutputNames(job).map(value => {
+      const candidate = path.resolve(root, value);
+      if (candidate === root || !candidate.startsWith(root + path.sep) || path.basename(candidate) !== value) throw new Error('job_output_path_invalid');
+      return candidate;
+    });
+  }
+
+  async removePublishedOutputs(job) {
+    const paths = this.publishedOutputPaths(job);
+    await Promise.all(paths.map(filePath => fsp.rm(filePath, { force: true })));
+    await Promise.all(paths.map(filePath => this.assertPathMissing(filePath, 'job_delete_incomplete')));
+  }
+
+  async assertPathMissing(filePath, diagnostic) {
+    try {
+      await fsp.lstat(filePath);
+    } catch (error) {
+      if (error?.code === 'ENOENT') return;
+      throw error;
+    }
+    throw new Error(diagnostic);
   }
 
   async existingStageFiles(job, files) {
@@ -330,15 +348,13 @@ class DownloadOrchestrator {
     if (!isTerminal(job.status)) throw new Error('job_not_terminal');
     if (this.runningJobs.has(job.id)) throw new Error('job_still_running');
 
+    const removedOutputs = this.publishedOutputNames(job);
+    this.publishedOutputPaths(job);
     await this.removeJobFiles(job);
-    const root = path.resolve(this.outputDir);
-    for (const value of Array.isArray(job.outputs) ? job.outputs : []) {
-      const candidate = path.resolve(root, String(value || ''));
-      if (candidate === root || !candidate.startsWith(root + path.sep)) throw new Error('job_output_path_invalid');
-      await fsp.rm(candidate, { force: true });
-    }
+    await this.removePublishedOutputs(job);
     this.jobs.delete(job.id);
-    this.removeJob(job.id);
+    await this.removeJob(job.id);
+    job.deletedOutputCount = removedOutputs.length;
     return job;
   }
 
@@ -429,7 +445,7 @@ class DownloadOrchestrator {
       const chapters = Array.isArray(manifest?.chapters) ? manifest.chapters : [];
       if (chapters.length === 0) throw new Error('chapter_list_empty');
       const fallbackTitle = (job.kind === 'novel' ? '小說' : '漫畫') + ' ' + job.id;
-      const title = String(manifest.title || job.title || fallbackTitle).slice(0, 500);
+      const title = cleanBookTitle(manifest.title || job.title || fallbackTitle, fallbackTitle);
       job.title = title;
       await this.ensureStage(job);
       if (!savedManifest) await this.writeJobManifest(job, title, chapters);
@@ -493,7 +509,7 @@ class DownloadOrchestrator {
             });
           }
           const chapterContent = {
-            title: chapter.title || result.title || '第 ' + (index + 1) + ' 章',
+            title: cleanBookTitle(chapter.title || result.title || '第 ' + (index + 1) + ' 章', '第 ' + (index + 1) + ' 章'),
             contentHtml: result.contentHtml,
             images: assets,
             baseUrl: chapter.url
@@ -524,13 +540,13 @@ class DownloadOrchestrator {
         const savedChapter = await this.readChapterCheckpoint(job, index);
         const resumedFiles = await this.existingPublishedFiles(job, savedChapter?.files);
         if (resumedFiles) {
-          await this.recordMangaOutput(job, index, savedChapter.title || chapter.title, savedChapter.files);
+          await this.recordMangaOutput(job, index, cleanBookTitle(savedChapter.title || chapter.title, `第 ${index + 1} 章`), savedChapter.files);
           this.update(job, { progress: { phase: 'resuming', completed: index + 1, total: chapters.length } });
           continue;
         }
         const stagedFiles = await this.existingStageFiles(job, savedChapter?.files);
         if (stagedFiles) {
-          const chapterTitle = savedChapter.title || chapter.title || `第 ${index + 1} 章`;
+          const chapterTitle = cleanBookTitle(savedChapter.title || chapter.title, `第 ${index + 1} 章`);
           const published = await this.publishOutputs(job, stagedFiles, { prefix: true });
           await this.recordMangaOutput(job, index, chapterTitle, published);
           await this.writeChapterCheckpoint(job, index, { title: chapterTitle, files: published });
@@ -609,7 +625,7 @@ class DownloadOrchestrator {
           chapterIndex: index,
           images: assets
         });
-        const chapterTitle = chapter.title || chapterResult.title || '第 ' + (index + 1) + ' 章';
+        const chapterTitle = cleanBookTitle(chapter.title || chapterResult.title || '第 ' + (index + 1) + ' 章', '第 ' + (index + 1) + ' 章');
         const published = await this.publishOutputs(job, output.files, { prefix: true });
         await this.recordMangaOutput(job, index, chapterTitle, published);
         await this.writeChapterCheckpoint(job, index, { title: chapterTitle, files: published });
