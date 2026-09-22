@@ -9,6 +9,7 @@ const { writeMangaChapterEpub, writeNovelEpub } = require('./epub-writer');
 const MAX_CHAPTERS = 2000;
 const MAX_PAGES = 512;
 const MAX_IMAGES = 1024;
+const MANGA_ASSET_BATCH_SIZE = 8;
 const MAX_RETRIES = 2;
 const DEFAULT_MAX_CONCURRENT_JOBS = 5;
 const MAX_CONCURRENT_JOBS = 8;
@@ -492,31 +493,56 @@ class DownloadOrchestrator {
         const evidence = Array.isArray(chapterResult?.images) ? chapterResult.images : [];
         if (evidence.length === 0) throw new Error('manga_chapter_images_missing');
         const assets = [];
-        for (let imageIndex = 0; imageIndex < evidence.length; imageIndex += 1) {
+        const canBatchAssets = isEightComicChapter(chapter, evidence);
+        for (let imageIndex = 0; imageIndex < evidence.length;) {
           this.assertActive(job);
-          const image = evidence[imageIndex];
-          const asset = await call({
+          const batch = canBatchAssets
+            ? evidence.slice(imageIndex, imageIndex + MANGA_ASSET_BATCH_SIZE)
+            : [evidence[imageIndex]];
+          const firstImage = batch[0];
+          const sourcePageUrl = firstImage.pageUrl || chapter.url;
+          const response = await call(canBatchAssets ? {
             url: job.url,
             chapterUrl: chapter.url,
-            sourcePageUrl: image.pageUrl || chapter.url,
-            assetUrl: image.url,
-            ...(Number.isInteger(image.pageIndex) ? { pageIndex: image.pageIndex } : {}),
+            sourcePageUrl,
+            assets: batch.map(image => ({
+              url: image.url,
+              ...(image.pageUrl ? { pageUrl: image.pageUrl } : {}),
+              ...(Number.isInteger(image.pageIndex) ? { pageIndex: image.pageIndex } : {})
+            })),
+            kind: 'manga',
+            mode: 'assets'
+          } : {
+            url: job.url,
+            chapterUrl: chapter.url,
+            sourcePageUrl,
+            assetUrl: firstImage.url,
+            ...(Number.isInteger(firstImage.pageIndex) ? { pageIndex: firstImage.pageIndex } : {}),
             kind: 'manga',
             mode: 'asset'
           });
-          if (!asset?.data) throw new Error('manga_asset_bytes_missing');
-          assets.push({ ...asset, alt: image.alt || '' });
-          this.update(job, {
-            progress: {
-              phase: 'fetching_images',
-              completed: index,
-              total: chapters.length,
-              chapter: index + 1,
-              chapterTotal: chapters.length,
-              image: imageIndex + 1,
-              imageTotal: evidence.length
-            }
-          });
+          const downloaded = canBatchAssets
+            ? (Array.isArray(response?.assets) ? response.assets : [])
+            : [response];
+          if (downloaded.length !== batch.length) throw new Error('manga_asset_batch_incomplete');
+          for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+            const image = batch[batchIndex];
+            const asset = downloaded[batchIndex];
+            if (!asset?.data) throw new Error('manga_asset_bytes_missing');
+            assets.push({ ...asset, alt: image.alt || '' });
+            this.update(job, {
+              progress: {
+                phase: 'fetching_images',
+                completed: index,
+                total: chapters.length,
+                chapter: index + 1,
+                chapterTotal: chapters.length,
+                image: imageIndex + batchIndex + 1,
+                imageTotal: evidence.length
+              }
+            });
+          }
+          imageIndex += batch.length;
         }
         this.assertActive(job);
         this.update(job, { progress: { phase: 'writing_epub', completed: index, total: chapters.length, chapter: index + 1 } });
@@ -603,6 +629,18 @@ class DownloadOrchestrator {
     if (job.pauseRequested || job.status === 'pausing' || job.status === 'paused') {
       throw pauseError();
     }
+  }
+}
+
+function isEightComicChapter(chapter, evidence) {
+  if (!Array.isArray(evidence) || evidence.length < 2) return false;
+  try {
+    const chapterUrl = new URL(String(chapter?.url || ''));
+    if (chapterUrl.hostname !== 'www.8comic.com' || !/^\/view\/\d+\.html$/i.test(chapterUrl.pathname)) return false;
+    const sourcePageUrl = String(evidence[0]?.pageUrl || chapterUrl.href);
+    return evidence.every(image => String(image?.pageUrl || chapterUrl.href) === sourcePageUrl);
+  } catch {
+    return false;
   }
 }
 

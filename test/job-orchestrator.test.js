@@ -3,6 +3,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const sharp = require('sharp');
 const { BridgeClient } = require('../bridge-client');
 const { normalizeConfig } = require('../binding-store');
 const { DownloadOrchestrator } = require('../job-orchestrator');
@@ -312,6 +313,82 @@ test('browser client disconnect is retried with the existing binding', async () 
   assert.deepEqual(result, { success: true });
   assert.equal(attempts, 2);
   assert.ok(phases.includes('retrying'));
+});
+
+test('8Comic manga images are fetched in bounded batches', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-manga-batch-'));
+  const bindingId = '77777777-7777-4777-8777-777777777777';
+  const config = normalizeConfig({
+    bindings: [{
+      bindingId,
+      bridgeUrl: 'http://host.docker.internal:8788',
+      serviceClientId: '88888888-8888-4888-8888-888888888888',
+      serviceCredential: 'credential',
+      browserClientId: '99999999-9999-4999-8999-999999999999'
+    }],
+    activeBindingId: bindingId,
+    callbackUrl: 'http://host.docker.internal:8092/api/bridge/callback'
+  });
+  const chapterUrl = 'https://www.8comic.com/view/26490.html?ch=1';
+  const job = {
+    id: 'job-manga-batch',
+    url: 'https://www.8comic.com/html/26490.html',
+    kind: 'manga',
+    status: 'queued',
+    bindingId,
+    callbackToken: 'callback-token',
+    progress: { phase: 'queued', completed: 0, total: null }
+  };
+  const imageData = (await sharp({
+    create: { width: 80, height: 120, channels: 4, background: '#00ff00' }
+  }).png().toBuffer()).toString('base64');
+  const batchSizes = [];
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]),
+    config,
+    saveConfig: async () => {},
+    outputDir: path.join(root, 'output'),
+    checkpointDir: path.join(root, 'checkpoints'),
+    update(value, change) { Object.assign(value, change); }
+  });
+  const fakeClient = {
+    paired: true,
+    async contentFetch(body) {
+      if (body.mode === 'chapters') return {
+        success: true,
+        title: '阿邦',
+        chapters: [{ url: chapterUrl, title: '第一章' }]
+      };
+      if (body.mode === 'chapter') return {
+        success: true,
+        title: '第一章',
+        images: Array.from({ length: 9 }, (_value, index) => ({
+          url: `https://img0.8comic.com/0/26490/1/${String(index + 1).padStart(3, '0')}_abc.jpg`,
+          pageUrl: chapterUrl,
+          alt: `第 ${index + 1} 頁`
+        }))
+      };
+      assert.equal(body.mode, 'assets');
+      batchSizes.push(body.assets.length);
+      return {
+        success: true,
+        assets: body.assets.map(image => ({
+          success: true,
+          assetUrl: image.url,
+          data: imageData,
+          mime: 'image/png'
+        }))
+      };
+    }
+  };
+  orchestrator.clients.set(bindingId, fakeClient);
+
+  await orchestrator.run(job);
+
+  assert.deepEqual(batchSizes, [8, 1]);
+  assert.equal(job.status, 'complete');
+  assert.equal(job.progress.completed, 1);
+  assert.equal(job.outputs.length, 2);
 });
 
 test('recoverable disconnect error jobs resume without removing checkpoints', async () => {
