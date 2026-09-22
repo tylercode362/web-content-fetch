@@ -53,6 +53,7 @@ test('legacy manga outputs can be grouped after service upgrade', () => {
 
 test('queue source contains expandable jobs and structured download rendering', async () => {
   const source = await fs.readFile(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const orchestratorSource = await fs.readFile(path.join(__dirname, '..', 'job-orchestrator.js'), 'utf8');
   const uiSource = await fs.readFile(path.join(__dirname, '..', 'ui.js'), 'utf8');
   assert.match(source, /ui\.css/);
   assert.match(source, /outputGroups/);
@@ -60,6 +61,10 @@ test('queue source contains expandable jobs and structured download rendering', 
   assert.match(source, /clear-failed/);
   assert.match(source, /clear-terminal/);
   assert.match(source, /isClearable/);
+  assert.match(source, /bridgeProgress/);
+  assert.doesNotMatch(source, /update\(job, \{ progress \}\)/);
+  assert.match(orchestratorSource, /bridgeProgress: null/);
+  assert.match(orchestratorSource, /image: imageIndex/);
   assert.doesNotMatch(source, /decorateJobs=/);
   assert.match(uiSource, /node\('summary'/);
   assert.match(uiSource, /node\('details'/);
@@ -68,6 +73,8 @@ test('queue source contains expandable jobs and structured download rendering', 
   assert.match(uiSource, /章節進度：/);
   assert.match(uiSource, /progress\.completed/);
   assert.match(uiSource, /chapterDownloadRatio/);
+  assert.match(uiSource, /bridgeProgress/);
+  assert.match(uiSource, /bridgeCompleted/);
   assert.match(uiSource, /目前章節下載/);
   assert.ok(uiSource.indexOf("className: 'job-progress'") < uiSource.indexOf("className: 'outputs'"));
 });

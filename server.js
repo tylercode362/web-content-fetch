@@ -60,6 +60,7 @@ function loadJobs() {
         job.diagnostic = 'recovered_after_restart';
         job.pauseRequested = false;
         job.cancelRequested = false;
+        job.bridgeProgress = null;
         job.progress = { ...(job.progress || {}), phase: 'queued' };
       }
       jobs.set(job.id, job);
@@ -86,6 +87,7 @@ function publicJob(job) {
     title: job.title || null,
     status: job.status,
     progress: job.progress,
+    bridgeProgress: job.bridgeProgress || null,
     diagnostic: job.diagnostic || null,
     outputs: Array.isArray(job.outputs) ? job.outputs.map(output => `/downloads/${encodeURIComponent(output)}`) : [],
     downloads: publicDownloads(job.outputs),
@@ -272,13 +274,13 @@ const server = http.createServer(async (request, response) => {
     try { body = await readJson(request); } catch { return sendJson(response, 400, { error: 'invalid_json' }); }
     const job = typeof body.jobId === 'string' ? jobs.get(body.jobId) : null;
     if (!callbackAllowed(request, job)) return sendJson(response, 403, { error: 'callback_forbidden' });
-    if (job.status === 'queued' || job.status === 'running') {
-      const progress = body.progress && typeof body.progress === 'object' ? {
+    if ((job.status === 'queued' || job.status === 'running') && body.progress && typeof body.progress === 'object') {
+      const progress = {
         phase: String(body.progress.phase || 'bridge_callback').slice(0, 64),
         completed: Number.isInteger(body.progress.completed) ? body.progress.completed : 0,
         total: Number.isInteger(body.progress.total) ? body.progress.total : null
-      } : job.progress;
-      update(job, { progress });
+      };
+      update(job, { bridgeProgress: progress });
     }
     return sendJson(response, 202, { accepted: true });
   }

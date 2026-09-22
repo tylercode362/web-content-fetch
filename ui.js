@@ -93,13 +93,19 @@
     const completed = total === null
       ? (reportedCompleted ?? 0)
       : Math.min(total, Math.max(0, reportedCompleted ?? (job.status === 'complete' ? total : 0)));
+    const bridgeProgress = job.bridgeProgress || {};
+    const bridgePhase = String(bridgeProgress.phase || '');
+    const hasBridgeAssetProgress = ['assets_verified', 'asset_verified'].includes(bridgePhase) &&
+      Number.isInteger(bridgeProgress.completed) && Number.isInteger(bridgeProgress.total);
+    const bridgeCompleted = hasBridgeAssetProgress ? Math.max(0, bridgeProgress.completed) : 0;
     let detailLabel = progress.phase || '等待中';
     let chapterDownloadLabel = '等待目前章節';
     let chapterDownloadRatio = 0;
     if (Number.isInteger(progress.image) && Number.isInteger(progress.imageTotal)) {
-      detailLabel = '目前第 ' + (progress.chapter || '?') + ' 章 · 圖片 ' + progress.image + ' / ' + progress.imageTotal;
-      chapterDownloadLabel = '第 ' + (progress.chapter || '?') + ' 章 · 圖片 ' + progress.image + ' / ' + progress.imageTotal;
-      chapterDownloadRatio = progress.imageTotal > 0 ? progress.image / progress.imageTotal : 0;
+      const downloadedImages = Math.min(progress.imageTotal, progress.image + bridgeCompleted);
+      detailLabel = '目前第 ' + (progress.chapter || '?') + ' 章 · 圖片 ' + downloadedImages + ' / ' + progress.imageTotal;
+      chapterDownloadLabel = '第 ' + (progress.chapter || '?') + ' 章 · 圖片 ' + downloadedImages + ' / ' + progress.imageTotal;
+      chapterDownloadRatio = progress.imageTotal > 0 ? downloadedImages / progress.imageTotal : 0;
     } else if (Number.isInteger(progress.chapter)) {
       detailLabel = '目前第 ' + progress.chapter + ' 章 · ' + (progress.phase || '處理中');
       if (progress.phase === 'writing_epub') {

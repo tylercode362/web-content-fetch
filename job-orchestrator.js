@@ -561,6 +561,18 @@ class DownloadOrchestrator {
           for (let imageIndex = 0; imageIndex < evidence.length; imageIndex += 1) {
             this.assertActive(job);
             const image = evidence[imageIndex];
+            this.update(job, {
+              bridgeProgress: null,
+              progress: {
+                phase: 'fetching_images',
+                completed: index,
+                total: chapters.length,
+                chapter: index + 1,
+                chapterTotal: chapters.length,
+                image: imageIndex,
+                imageTotal: evidence.length
+              }
+            });
             const asset = await call({
               url: job.url,
               chapterUrl: chapter.url,
@@ -569,6 +581,7 @@ class DownloadOrchestrator {
               kind: 'novel',
               mode: 'asset'
             });
+            this.update(job, { bridgeProgress: null });
             if (!asset?.data) throw new Error('novel_image_asset_bytes_missing');
             assets.push({ ...asset, sourceUrl: image.url, alt: image.alt || '' });
             this.update(job, {
@@ -647,6 +660,18 @@ class DownloadOrchestrator {
             : [evidence[imageIndex]];
           const firstImage = batch[0];
           const sourcePageUrl = firstImage.pageUrl || chapter.url;
+          this.update(job, {
+            bridgeProgress: null,
+            progress: {
+              phase: 'fetching_images',
+              completed: index,
+              total: chapters.length,
+              chapter: index + 1,
+              chapterTotal: chapters.length,
+              image: imageIndex,
+              imageTotal: evidence.length
+            }
+          });
           const response = await call(canBatchAssets ? {
             url: job.url,
             chapterUrl: chapter.url,
@@ -667,6 +692,7 @@ class DownloadOrchestrator {
             kind: 'manga',
             mode: 'asset'
           });
+          this.update(job, { bridgeProgress: null });
           const downloaded = canBatchAssets
             ? (Array.isArray(response?.assets) ? response.assets : [])
             : [response];

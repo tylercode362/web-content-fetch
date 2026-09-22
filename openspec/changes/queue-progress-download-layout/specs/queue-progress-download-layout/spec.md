@@ -26,6 +26,15 @@ UI MUST 持續顯示已完成章節數與總章節數；圖片頁數進度不得
 - **AND** 漫畫 UI MUST 另外顯示目前章節圖片已下載／圖片總數的獨立進度
 - **AND** 圖片完成但 EPUB 尚未產生時，獨立進度 MUST 顯示圖片已完成與產檔中狀態
 
+### Scenario: Bridge batch progress does not overwrite chapter progress
+
+- **GIVEN** WCF 正在第 6 / 8 章處理一批 8 張圖片
+- **AND** Bridge callback 回報 `assets_verified` 的 `6 / 8`
+- **WHEN** WCF 更新持久化 job 狀態
+- **THEN** 整體章節進度 MUST 仍為 5 / 8 已完成、目前第 6 章
+- **AND** 目前章節進度 MUST 顯示該批次的 6 / 8 張圖片
+- **AND** Bridge callback 的批次計數 MUST NOT 被寫入 job 的整體 `completed`／`total`
+
 ### Scenario: total chapter count is not known yet
 
 - **GIVEN** job 尚未取得章節清單
