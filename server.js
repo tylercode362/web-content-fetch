@@ -3,10 +3,11 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const JSZip = require('jszip');
 const { DownloadOrchestrator, publicBinding, safeDiagnostic, isTerminal } = require('./job-orchestrator');
 const { normalizeBaseUrl } = require('./bridge-client');
 const { applyBindingToJob, getBinding, normalizeConfig } = require('./binding-store');
-const { publicDownloads } = require('./job-view');
+const { publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('./job-view');
 
 const host = process.env.WEB_CONTENT_FETCH_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.WEB_CONTENT_FETCH_PORT || 8092);
@@ -73,6 +74,9 @@ function persistJobs() {
 }
 
 function publicJob(job) {
+  const outputGroups = publicOutputGroups(job.outputGroups).length > 0
+    ? publicOutputGroups(job.outputGroups)
+    : (job.kind === 'manga' ? publicOutputGroups(legacyMangaOutputGroups(job.outputs)) : []);
   return {
     id: job.id,
     url: job.url,
@@ -83,6 +87,10 @@ function publicJob(job) {
     diagnostic: job.diagnostic || null,
     outputs: Array.isArray(job.outputs) ? job.outputs.map(output => `/downloads/${encodeURIComponent(output)}`) : [],
     downloads: publicDownloads(job.outputs),
+    outputGroups,
+    downloadAll: Array.isArray(job.outputs) && job.outputs.length > 0
+      ? `/api/jobs/${encodeURIComponent(job.id)}/download-all`
+      : null,
     chapterCount: job.chapterCount || null,
     bindingId: job.bindingId || null,
     bridgeUrl: job.bridgeUrl || null,
@@ -189,7 +197,7 @@ function readJson(request) {
   });
 }
 
-function renderHtml(token) {
+function renderLegacyHtml(token) {
   return '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<meta name="csrf-token" content="' + escapeHtml(token) + '"><title>Web Content Fetch</title>' +
@@ -226,18 +234,33 @@ function renderHtml(token) {
     '</script></body></html>';
 }
 
+function renderHtml(token) {
+  return '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
+    '<meta name="csrf-token" content="' + escapeHtml(token) + '"><title>Web Content Fetch</title>' +
+    '<link rel="stylesheet" href="ui.css"></head><body>' +
+    '<main class="shell"><header class="hero"><div><p class="eyebrow">LOCAL CONTENT WORKSPACE</p><h1>內容下載任務</h1><p class="lede">小說整部輸出；漫畫逐章／逐卷完成就能下載。</p></div><div id="connection" class="connection" data-state="unknown">檢查 Bridge 中…</div></header>' +
+    '<section class="panel settings"><div class="section-heading"><div><p class="eyebrow">CONNECTION</p><h2>Bridge 設定</h2></div><span class="section-note">配對碼只用於建立 binding</span></div>' +
+    '<div class="settings-grid"><label>Bridge Server URL<input id="bridgeUrl" type="url"></label><label>Callback URL<input id="callbackUrl" type="url"></label></div>' +
+    '<div class="settings-actions"><label>目前 binding<select id="bindingSelect"></select></label><button id="saveConfig" class="button secondary">儲存設定</button><label>六碼綁定碼<input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair" class="button secondary">新增 Bridge 綁定</button></div><p id="binding" class="hint"></p><p id="browserServiceId" class="hint"></p><p id="configStatus" class="feedback"></p></section>' +
+    '<section class="panel add-job"><div class="section-heading"><div><p class="eyebrow">QUEUE</p><h2>新增下載任務</h2></div><span class="section-note">同一 FQDN 會依序處理</span></div><form id="form"><input id="url" type="url" placeholder="貼上小說或漫畫作品網址" required><select id="kind"><option value="auto">自動判斷</option><option value="novel">小說</option><option value="manga">漫畫</option></select><select id="jobBinding" required></select><button class="button primary">加入佇列</button></form><p id="status" class="feedback"></p></section>' +
+    '<section class="queue-header"><div><p class="eyebrow">DOWNLOAD QUEUE</p><h2>工作佇列</h2></div><div class="queue-tools"><div id="stats" class="stats"></div><button id="clearTerminal" class="button ghost">清除已結束紀錄</button></div></section><section id="jobs" class="jobs" aria-live="polite"></section></main><script src="ui.js"></script></body></html>';
+}
+
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
   if (request.method === 'GET' && url.pathname === '/healthz') {
     return sendJson(response, 200, { ok: true, service: 'web-content-fetch', bridgeUrl: publicBinding(config).bridgeUrl, paired: orchestrator.paired });
   }
+  if (request.method === 'GET' && url.pathname === '/ui.css') return serveStatic(response, 'ui.css', 'text/css; charset=utf-8');
+  if (request.method === 'GET' && url.pathname === '/ui.js') return serveStatic(response, 'ui.js', 'text/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/') {
     const token = crypto.randomBytes(24).toString('base64url');
     response.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
       'Set-Cookie': `wcf_csrf=${encodeURIComponent(token)}; SameSite=Strict; Path=/`,
-      'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'",
+      'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'",
       'Referrer-Policy': 'no-referrer'
     });
     return response.end(renderHtml(token));
@@ -335,6 +358,16 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 400, { error: error.message === 'url_invalid' ? 'url_invalid' : 'invalid_json' });
     }
   }
+  if (request.method === 'POST' && url.pathname === '/api/jobs/clear-terminal') {
+    if (!csrfAllowed(request)) return sendJson(response, 403, { error: 'csrf_forbidden' });
+    const terminalJobs = [...jobs.values()].filter(job => isTerminal(job.status));
+    try {
+      for (const job of terminalJobs) await orchestrator.delete(job.id);
+      return sendJson(response, 200, { deleted: terminalJobs.length });
+    } catch (error) {
+      return sendJson(response, 422, { error: safeDiagnostic(error) });
+    }
+  }
   const jobActionMatch = request.method === 'POST' && url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/(pause|resume|cancel|delete)$/i);
   if (jobActionMatch) {
     if (!csrfAllowed(request)) return sendJson(response, 403, { error: 'csrf_forbidden' });
@@ -351,6 +384,12 @@ const server = http.createServer(async (request, response) => {
     }
     return sendJson(response, 200, { job: publicJob(job) });
   }
+  const archiveMatch = request.method === 'GET' && url.pathname.match(/^\/api\/jobs\/([0-9a-f-]{36})\/download-all$/i);
+  if (archiveMatch) {
+    const job = jobs.get(archiveMatch[1]);
+    if (!job) return sendJson(response, 404, { error: 'job_not_found' });
+    return downloadAll(response, job);
+  }
   if (request.method === 'GET' && url.pathname.startsWith('/downloads/')) return downloadOutput(response, decodeURIComponent(url.pathname.slice('/downloads/'.length)));
   return sendJson(response, 404, { error: 'not_found' });
 });
@@ -366,6 +405,40 @@ async function downloadOutput(response, relativeName) {
     response.writeHead(200, { 'Content-Type': 'application/epub+zip', 'Content-Length': stat.size, 'Content-Disposition': `attachment; filename="${path.basename(filePath).replace(/"/g, '')}"`, 'Cache-Control': 'no-store' });
     fs.createReadStream(filePath).pipe(response);
   } catch { return sendJson(response, 404, { error: 'output_not_found' }); }
+}
+
+async function downloadAll(response, job) {
+  const files = publicDownloads(job.outputs).map(item => item.filename);
+  if (files.length === 0) return sendJson(response, 404, { error: 'output_not_found' });
+  const root = path.resolve(outputDir);
+  const paths = [];
+  try {
+    for (const name of files) {
+      const filePath = path.resolve(root, name);
+      if (filePath === root || !filePath.startsWith(root + path.sep) || path.basename(filePath) !== name) throw new Error('output_invalid');
+      const stat = await fsp.stat(filePath);
+      if (!stat.isFile() || stat.size > 512 * 1024 * 1024) throw new Error('output_not_found');
+      paths.push({ name, filePath });
+    }
+  } catch (error) {
+    return sendJson(response, error.message === 'output_invalid' ? 400 : 404, { error: error.message });
+  }
+  const zip = new JSZip();
+  for (const item of paths) zip.file(item.name, fs.createReadStream(item.filePath));
+  response.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Content-Disposition': `attachment; filename="web-content-fetch-${job.id}.zip"; filename*=UTF-8''${encodeURIComponent(String(job.title || 'content-download').slice(0, 120))}.zip`,
+    'Cache-Control': 'no-store'
+  });
+  const stream = zip.generateNodeStream({ type: 'nodebuffer', streamFiles: true, compression: 'STORE' });
+  stream.on('error', () => response.destroy());
+  stream.pipe(response);
+}
+
+function serveStatic(response, filename, contentType) {
+  const filePath = path.join(__dirname, filename);
+  response.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
+  return fs.createReadStream(filePath).on('error', () => response.destroy()).pipe(response);
 }
 
 function validateCallbackUrl(value) {

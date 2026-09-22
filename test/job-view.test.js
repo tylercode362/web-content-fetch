@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
-const { classifyOutput, publicDownloads } = require('../job-view');
+const { classifyOutput, publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('../job-view');
 
 test('public downloads classify EPUB and KEPUB while rejecting unsafe names', () => {
   assert.deepEqual(classifyOutput('阿邦-chapter-0001.epub'), {
@@ -28,11 +28,35 @@ test('public download list preserves every valid output with same-origin hrefs',
   ]);
 });
 
+test('public output groups preserve chapter labels and file links', () => {
+  assert.deepEqual(publicOutputGroups([
+    { chapterIndex: 2, title: '第三章', files: ['job-epub.epub', 'job-epub.kepub.epub'] },
+    { chapterIndex: 3, title: '不安全', files: ['../bad.epub'] }
+  ]), [
+    { chapterIndex: 2, label: '第三章', downloads: [
+      { filename: 'job-epub.epub', format: 'EPUB', href: '/downloads/job-epub.epub' },
+      { filename: 'job-epub.kepub.epub', format: 'KEPUB', href: '/downloads/job-epub.kepub.epub' }
+    ] }
+  ]);
+});
+
+test('legacy manga outputs can be grouped after service upgrade', () => {
+  assert.deepEqual(legacyMangaOutputGroups([
+    '阿邦-chapter-0002.epub',
+    '阿邦-chapter-0001.kepub.epub',
+    '阿邦-chapter-0001.epub'
+  ]), [
+    { chapterIndex: 0, title: '第 1 章', files: ['阿邦-chapter-0001.kepub.epub', '阿邦-chapter-0001.epub'] },
+    { chapterIndex: 1, title: '第 2 章', files: ['阿邦-chapter-0002.epub'] }
+  ]);
+});
+
 test('queue source contains expandable jobs and structured download rendering', async () => {
   const source = await fs.readFile(path.join(__dirname, '..', 'server.js'), 'utf8');
-  assert.match(source, /className="job"/);
-  assert.match(source, /job\.downloads/);
-  assert.match(source, /下載檔案/);
+  assert.match(source, /ui\.css/);
+  assert.match(source, /outputGroups/);
+  assert.match(source, /download-all/);
+  assert.match(source, /clear-terminal/);
   assert.doesNotMatch(source, /decorateJobs=/);
 });
 

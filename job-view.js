@@ -18,4 +18,35 @@ function publicDownloads(outputs) {
   }));
 }
 
-module.exports = { classifyOutput, publicDownloads };
+function publicOutputGroups(groups) {
+  if (!Array.isArray(groups)) return [];
+  return groups.map((group, position) => {
+    if (!group || !Array.isArray(group.files)) return null;
+    const files = publicDownloads(group.files);
+    if (files.length === 0) return null;
+    const chapterIndex = Number.isInteger(group.chapterIndex) && group.chapterIndex >= 0
+      ? group.chapterIndex
+      : position;
+    return {
+      chapterIndex,
+      label: String(group.title || `第 ${chapterIndex + 1} 章`).slice(0, 500),
+      downloads: files
+    };
+  }).filter(Boolean);
+}
+
+function legacyMangaOutputGroups(outputs) {
+  const groups = new Map();
+  for (const value of Array.isArray(outputs) ? outputs : []) {
+    const classified = classifyOutput(value);
+    const match = classified?.filename.match(/-chapter-(\d{4})\.(?:kepub\.)?epub$/i);
+    if (!match) continue;
+    const chapterIndex = Number(match[1]) - 1;
+    const group = groups.get(chapterIndex) || { chapterIndex, title: `第 ${chapterIndex + 1} 章`, files: [] };
+    group.files.push(classified.filename);
+    groups.set(chapterIndex, group);
+  }
+  return [...groups.values()].sort((left, right) => left.chapterIndex - right.chapterIndex);
+}
+
+module.exports = { classifyOutput, publicDownloads, publicOutputGroups, legacyMangaOutputGroups };

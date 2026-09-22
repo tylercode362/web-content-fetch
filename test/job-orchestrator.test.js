@@ -122,7 +122,7 @@ test('running job cancellation aborts fetch and sends an additive Bridge cancel 
 
   assert.equal(cancelKey, job.id);
   assert.equal(job.status, 'cancelled');
-  assert.equal(job.outputs, undefined);
+  assert.deepEqual(job.outputs, []);
   assert.ok(updates.some(item => item.status === 'cancelling'));
   assert.ok(updates.some(item => item.status === 'cancelled'));
   BridgeClient.prototype.cancelContentFetch = previousCancel;
@@ -243,7 +243,9 @@ test('paused jobs resume from checkpoints and cancellation removes job files', a
     kind: 'novel',
     status: 'queued',
     bindingId,
-    progress: { phase: 'queued', completed: 1, total: 3 }
+    progress: { phase: 'queued', completed: 1, total: 3 },
+    outputs: ['job-pause-cleanup.epub'],
+    outputGroups: [{ chapterIndex: 0, title: '第一章', files: ['job-pause-cleanup.epub'] }]
   };
   const orchestrator = new DownloadOrchestrator({
     jobs: new Map([[job.id, job]]),
@@ -257,6 +259,8 @@ test('paused jobs resume from checkpoints and cancellation removes job files', a
   await orchestrator.writeJobManifest(job, '測試小說', [{ url: job.url, title: '第一章' }]);
   await orchestrator.writeChapterCheckpoint(job, 0, { title: '第一章', contentHtml: '<p>已完成</p>', images: [] });
   await fs.writeFile(path.join(orchestrator.stagePath(job), 'partial.epub'), 'partial');
+  await fs.mkdir(path.join(root, 'output'), { recursive: true });
+  await fs.writeFile(path.join(root, 'output', 'job-pause-cleanup.epub'), 'published');
   let drainCount = 0;
   orchestrator.drain = async () => { drainCount += 1; };
 
@@ -270,6 +274,7 @@ test('paused jobs resume from checkpoints and cancellation removes job files', a
   assert.equal(job.status, 'cancelled');
   await assert.rejects(() => fs.access(orchestrator.checkpointPath(job)));
   await assert.rejects(() => fs.access(orchestrator.stagePath(job)));
+  await assert.rejects(() => fs.access(path.join(root, 'output', 'job-pause-cleanup.epub')));
 });
 
 test('browser client disconnect is retried with the existing binding', async () => {
@@ -343,13 +348,14 @@ test('8Comic manga images are fetched in bounded batches', async () => {
     create: { width: 80, height: 120, channels: 4, background: '#00ff00' }
   }).png().toBuffer()).toString('base64');
   const batchSizes = [];
+  const publishedSnapshots = [];
   const orchestrator = new DownloadOrchestrator({
     jobs: new Map([[job.id, job]]),
     config,
     saveConfig: async () => {},
     outputDir: path.join(root, 'output'),
     checkpointDir: path.join(root, 'checkpoints'),
-    update(value, change) { Object.assign(value, change); }
+    update(value, change) { Object.assign(value, change); if (Array.isArray(value.outputGroups) && value.outputGroups.length) publishedSnapshots.push(value.outputGroups.map(group => ({ ...group }))); }
   });
   const fakeClient = {
     paired: true,
@@ -389,6 +395,10 @@ test('8Comic manga images are fetched in bounded batches', async () => {
   assert.equal(job.status, 'complete');
   assert.equal(job.progress.completed, 1);
   assert.equal(job.outputs.length, 2);
+  assert.equal(job.outputGroups.length, 1);
+  assert.equal(job.outputGroups[0].title, '第一章');
+  assert.equal(publishedSnapshots.length > 0, true);
+  assert.match(job.outputs[0], /^job-manga-batch-/);
 });
 
 test('recoverable disconnect error jobs resume without removing checkpoints', async () => {

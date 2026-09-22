@@ -213,21 +213,65 @@ class DownloadOrchestrator {
     ]);
   }
 
-  async publishOutputs(job, files) {
+  async publishOutputs(job, files, options = {}) {
     const stage = path.resolve(await this.ensureStage(job));
     const published = [];
+    const prefix = options.prefix ? `${this.storageKey(job)}-` : '';
     for (const file of files) {
       const source = path.resolve(String(file));
       if (source !== stage && !source.startsWith(stage + path.sep)) throw new Error('job_output_path_invalid');
       const relative = path.relative(stage, source);
       const name = path.basename(relative);
       if (!name || name.startsWith('.')) throw new Error('job_output_path_invalid');
-      const destination = path.join(this.outputDir, name);
+      const destination = path.join(this.outputDir, `${prefix}${name}`);
       await fsp.rm(destination, { force: true });
       await fsp.rename(source, destination);
       published.push(relativeOutput(this.outputDir, destination));
     }
     return published;
+  }
+
+  async existingPublishedFiles(job, files) {
+    if (!Array.isArray(files) || files.length === 0) return null;
+    const root = path.resolve(this.outputDir);
+    const paths = [];
+    for (const value of files) {
+      const candidate = path.resolve(root, String(value || ''));
+      if (candidate === root || !candidate.startsWith(root + path.sep) || path.basename(candidate) !== String(value || '')) return null;
+      paths.push(candidate);
+    }
+    try {
+      await Promise.all(paths.map(file => fsp.access(file)));
+      return paths;
+    } catch {
+      return null;
+    }
+  }
+
+  async recordMangaOutput(job, chapterIndex, title, files) {
+    const validFiles = [...new Set((Array.isArray(files) ? files : []).map(value => String(value || '')).filter(Boolean))];
+    if (validFiles.length === 0) throw new Error('manga_output_missing');
+    const groups = Array.isArray(job.outputGroups) ? job.outputGroups.filter(group => group?.chapterIndex !== chapterIndex) : [];
+    groups.push({ chapterIndex, title: String(title || `第 ${chapterIndex + 1} 章`).slice(0, 500), files: validFiles });
+    groups.sort((left, right) => left.chapterIndex - right.chapterIndex);
+    const outputs = [...new Set([
+      ...(Array.isArray(job.outputs) ? job.outputs : []),
+      ...groups.flatMap(group => Array.isArray(group.files) ? group.files : [])
+    ])];
+    this.update(job, { outputs, outputGroups: groups });
+  }
+
+  async removePublishedOutputs(job) {
+    const root = path.resolve(this.outputDir);
+    const values = [...new Set([
+      ...(Array.isArray(job.outputs) ? job.outputs : []),
+      ...(Array.isArray(job.outputGroups) ? job.outputGroups.flatMap(group => group?.files || []) : [])
+    ])];
+    await Promise.all(values.map(async value => {
+      const candidate = path.resolve(root, String(value || ''));
+      if (candidate === root || !candidate.startsWith(root + path.sep) || path.basename(candidate) !== String(value || '')) throw new Error('job_output_path_invalid');
+      await fsp.rm(candidate, { force: true });
+    }));
   }
 
   async existingStageFiles(job, files) {
@@ -253,10 +297,13 @@ class DownloadOrchestrator {
     if (isTerminal(job.status)) return job;
     if (job.status === 'queued' || job.status === 'paused') {
       await this.removeJobFiles(job);
+      await this.removePublishedOutputs(job);
       this.update(job, {
         status: 'cancelled',
         progress: { ...(job.progress || {}), phase: 'cancelled' },
-        diagnostic: null
+        diagnostic: null,
+        outputs: [],
+        outputGroups: []
       });
       return job;
     }
@@ -471,14 +518,22 @@ class DownloadOrchestrator {
         return;
       }
 
-      const stagedOutputs = [];
       for (let index = 0; index < chapters.length; index += 1) {
         this.assertActive(job);
         const chapter = chapters[index];
         const savedChapter = await this.readChapterCheckpoint(job, index);
-        const resumedFiles = await this.existingStageFiles(job, savedChapter?.files);
+        const resumedFiles = await this.existingPublishedFiles(job, savedChapter?.files);
         if (resumedFiles) {
-          stagedOutputs.push(...resumedFiles);
+          await this.recordMangaOutput(job, index, savedChapter.title || chapter.title, savedChapter.files);
+          this.update(job, { progress: { phase: 'resuming', completed: index + 1, total: chapters.length } });
+          continue;
+        }
+        const stagedFiles = await this.existingStageFiles(job, savedChapter?.files);
+        if (stagedFiles) {
+          const chapterTitle = savedChapter.title || chapter.title || `第 ${index + 1} 章`;
+          const published = await this.publishOutputs(job, stagedFiles, { prefix: true });
+          await this.recordMangaOutput(job, index, chapterTitle, published);
+          await this.writeChapterCheckpoint(job, index, { title: chapterTitle, files: published });
           this.update(job, { progress: { phase: 'resuming', completed: index + 1, total: chapters.length } });
           continue;
         }
@@ -554,30 +609,32 @@ class DownloadOrchestrator {
           chapterIndex: index,
           images: assets
         });
-        stagedOutputs.push(...output.files);
-        await this.writeChapterCheckpoint(job, index, {
-          title: chapter.title || chapterResult.title || '第 ' + (index + 1) + ' 章',
-          files: output.files.map(file => relativeOutput(stage, file))
-        });
+        const chapterTitle = chapter.title || chapterResult.title || '第 ' + (index + 1) + ' 章';
+        const published = await this.publishOutputs(job, output.files, { prefix: true });
+        await this.recordMangaOutput(job, index, chapterTitle, published);
+        await this.writeChapterCheckpoint(job, index, { title: chapterTitle, files: published });
         this.assertActive(job);
         this.update(job, { progress: { phase: 'fetching_chapters', completed: index + 1, total: chapters.length } });
       }
       this.assertActive(job);
-      const outputs = await this.publishOutputs(job, stagedOutputs);
       await this.removeJobFiles(job);
       this.update(job, {
         status: 'complete',
         progress: { phase: 'complete', completed: chapters.length, total: chapters.length },
-        outputs,
+        outputs: [...new Set(job.outputs || [])],
+        outputGroups: Array.isArray(job.outputGroups) ? job.outputGroups : [],
         chapterCount: chapters.length
       });
     } catch (error) {
       if (job.cancelRequested || (isAbortError(error) && !job.pauseRequested)) {
         await this.removeJobFiles(job);
+        await this.removePublishedOutputs(job);
         this.update(job, {
           status: 'cancelled',
           progress: { ...(job.progress || {}), phase: 'cancelled' },
-          diagnostic: null
+          diagnostic: null,
+          outputs: [],
+          outputGroups: []
         });
       } else if (job.pauseRequested || job.status === 'pausing' || isPauseError(error)) {
         this.update(job, {
