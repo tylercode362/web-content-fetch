@@ -67,6 +67,21 @@ test('queue source contains expandable jobs and structured download rendering', 
   assert.match(uiSource, /delete_not_confirmed/);
 });
 
+test('queue UI uses one binding, has CSRF recovery, and reports terminal cleanup results', async () => {
+  const source = await fs.readFile(path.join(__dirname, '..', 'server.js'), 'utf8');
+  const uiSource = await fs.readFile(path.join(__dirname, '..', 'ui.js'), 'utf8');
+  const cssSource = await fs.readFile(path.join(__dirname, '..', 'ui.css'), 'utf8');
+  const modernUi = source.split('function renderHtml(token) {')[1].split('const server =')[0];
+  assert.doesNotMatch(modernUi, /jobBinding|bindingSelect/);
+  assert.match(modernUi, /bindingId/);
+  assert.match(source, /api\/csrf/);
+  assert.match(source, /deletedJobIds/);
+  assert.match(uiSource, /credentials: 'same-origin'/);
+  assert.match(uiSource, /csrf_forbidden/);
+  assert.match(uiSource, /renewCsrf/);
+  assert.match(cssSource, /form #url{min-width:0/);
+});
+
 test('reusable deployment script is confirmation-gated and health-checked', async () => {
   const source = await fs.readFile(path.join(__dirname, '..', 'scripts', 'Deploy.ps1'), 'utf8');
   assert.match(source, /ConfirmDeploy/);

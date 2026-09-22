@@ -13,21 +13,21 @@ function normalizeConfig(raw = {}, env = process.env) {
     source.defaultBridgeUrl || source.bridgeUrl || env.WEB_CONTENT_FETCH_BRIDGE_URL || 'http://host.docker.internal:8788'
   );
   const callbackUrl = source.callbackUrl || env.WEB_CONTENT_FETCH_CALLBACK_URL;
-  const bindings = [];
+  const validBindings = [];
   const seen = new Set();
   const inputBindings = Array.isArray(source.bindings) ? source.bindings : [];
   for (const item of inputBindings) {
     if (!item || !isUuid(item.bindingId) || !isUuid(item.serviceClientId) ||
         !isUuid(item.browserClientId) || seen.has(item.bindingId)) continue;
     seen.add(item.bindingId);
-    bindings.push(normalizeBinding(item, defaultBridgeUrl));
+    validBindings.push(normalizeBinding(item, defaultBridgeUrl));
   }
 
   // Migrate the original single-binding shape without rotating its UUID or
   // credential. The server persists the canonical shape after startup.
-  if (bindings.length === 0 && isUuid(source.serviceClientId) && isUuid(source.browserClientId)) {
+  if (validBindings.length === 0 && isUuid(source.serviceClientId) && isUuid(source.browserClientId)) {
     const bindingId = isUuid(source.bindingId) ? source.bindingId : crypto.randomUUID();
-    bindings.push(normalizeBinding({
+    validBindings.push(normalizeBinding({
       bindingId,
       bridgeUrl: source.bridgeUrl || defaultBridgeUrl,
       expectedFingerprint: source.expectedFingerprint || env.WEB_CONTENT_FETCH_BRIDGE_FINGERPRINT || '',
@@ -40,14 +40,18 @@ function normalizeConfig(raw = {}, env = process.env) {
   }
 
   const requestedActive = isUuid(source.activeBindingId) ? source.activeBindingId : '';
-  const activeBindingId = bindings.some(item => item.bindingId === requestedActive)
-    ? requestedActive
-    : (bindings[0]?.bindingId || null);
+  const canonical = validBindings.find(item => item.bindingId === requestedActive) || validBindings[0] || null;
+  const bindingAliases = [...new Set([
+    ...(Array.isArray(source.bindingAliases) ? source.bindingAliases.filter(isUuid) : []),
+    ...validBindings.map(item => item.bindingId),
+    ...(isUuid(source.bindingId) ? [source.bindingId] : [])
+  ])];
   return {
     defaultBridgeUrl,
     callbackUrl,
-    activeBindingId,
-    bindings
+    activeBindingId: canonical?.bindingId || null,
+    bindings: canonical ? [canonical] : [],
+    bindingAliases
   };
 }
 
@@ -65,8 +69,14 @@ function normalizeBinding(value, fallbackBridgeUrl) {
 }
 
 function getBinding(config, bindingId) {
-  const id = bindingId || config.activeBindingId;
-  return config.bindings.find(item => item.bindingId === id) || null;
+  const canonical = config.bindings?.[0] || null;
+  if (!canonical) return null;
+  const requested = String(bindingId || '');
+  if (!requested || requested === canonical.bindingId ||
+      (Array.isArray(config.bindingAliases) && config.bindingAliases.includes(requested))) {
+    return canonical;
+  }
+  return null;
 }
 
 function publicBindingProfile(binding) {
@@ -92,7 +102,7 @@ function publicBinding(config) {
     browserClientId: active?.browserClientId || null,
     expectedFingerprint: active?.expectedFingerprint || null,
     paired: Boolean(active?.serviceCredential),
-    bindings: config.bindings.map(publicBindingProfile)
+    bindings: active ? [publicBindingProfile(active)] : []
   };
 }
 

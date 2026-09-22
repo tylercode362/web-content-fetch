@@ -22,6 +22,14 @@ OVERLORD 工作 MUST 在真實內容與圖片證據完整時產生一個原始 E
 - **When** 工作完成並通過 `kepubify`
 - **Then** 輸出包含章節文字、可驗證的正文圖片 entry、Kobo viewport，以及每張圖片的 inline width／height
 
+#### Scenario: OVERLORD volume links are expanded
+
+- **Given** Linovel catalog returns volume landing links such as `/novel/2014/vol_72364.html`
+- **When** the chapter manifest is created
+- **Then** the Bridge SHALL expand each same-work volume landing page into its real chapter links
+- **And** the DownloadJob SHALL not attempt to read a volume landing page as正文
+- **And** a resumed job with the old volume manifest SHALL rebuild only the manifest while retaining valid chapter checkpoints
+
 ### Requirement: 阿邦漫畫逐章輸出
 
 阿邦工作 MUST 將每個章節輸出為獨立的原始 EPUB 與 KEPUB EPUB；章節中的 next／下一頁 MUST 合併成同一章的有序圖片序列。
@@ -35,6 +43,19 @@ OVERLORD 工作 MUST 在真實內容與圖片證據完整時產生一個原始 E
 ### Requirement: 廣告與假 lazy-load 圖片排除
 
 系統 MUST 排除廣告與蓋板節點，不得把 placeholder、廣告 iframe 或只有 lazy-load 欄位名稱的節點當成正文或圖片資產。
+
+#### Scenario: Linovel lazy source activation
+
+- **Given** Linovel 的正文圖片以 `data-src` 保存真實 URL，`src` 仍為 `sloading.svg`
+- **When** Chrome Bridge 收集正文圖片
+- **Then** 必須先觸發 lazy source 並等待自然尺寸，再排除仍為 placeholder 的節點
+
+#### Scenario: Linovel next chapter boundary
+
+- **Given** Linovel 以無 `href` 的「下一章」控制元件和 `ReadParams.url_next` 宣告下一章
+- **When** web-content-fetch 讀取目前章節
+- **Then** 不得把下一章併入目前章節 EPUB
+- **And** 明確同章下一頁 URL 仍必須依序合併
 
 ### Requirement: 背景分頁內容擷取
 

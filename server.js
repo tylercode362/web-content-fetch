@@ -8,6 +8,7 @@ const { DownloadOrchestrator, publicBinding, safeDiagnostic, isClearable } = req
 const { normalizeBaseUrl } = require('./bridge-client');
 const { applyBindingToJob, getBinding, normalizeConfig } = require('./binding-store');
 const { publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('./job-view');
+const { createCsrfStore } = require('./csrf');
 
 const host = process.env.WEB_CONTENT_FETCH_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.WEB_CONTENT_FETCH_PORT || 8092);
@@ -17,6 +18,7 @@ const stateFile = path.join(stateDir, 'jobs.json');
 const configFile = path.join(stateDir, 'config.json');
 const jobs = new Map();
 const subscribers = new Set();
+const csrfStore = createCsrfStore();
 const maxJobs = 256;
 
 fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
@@ -52,7 +54,7 @@ function loadJobs() {
     for (const job of Array.isArray(parsed) ? parsed : []) {
       if (!job || typeof job.id !== 'string') continue;
       const binding = getBinding(config, job.bindingId);
-      if (binding && !job.bindingId) applyBindingToJob(job, binding);
+      if (binding) applyBindingToJob(job, binding);
       if (job.status === 'running' || job.status === 'pausing' || job.status === 'cancelling') {
         job.status = 'queued';
         job.diagnostic = 'recovered_after_restart';
@@ -161,8 +163,7 @@ function parseCookies(request) {
 
 function csrfAllowed(request) {
   const cookies = parseCookies(request);
-  return typeof request.headers['x-csrf-token'] === 'string' &&
-    cookies.wcf_csrf && request.headers['x-csrf-token'] === cookies.wcf_csrf;
+  return csrfStore.verify(request.headers['x-csrf-token'], cookies.wcf_csrf);
 }
 
 function callbackAllowed(request, job) {
@@ -242,8 +243,8 @@ function renderHtml(token) {
     '<main class="shell"><header class="hero"><div><p class="eyebrow">LOCAL CONTENT WORKSPACE</p><h1>內容下載任務</h1><p class="lede">小說整部輸出；漫畫逐章／逐卷完成就能下載。</p></div><div id="connection" class="connection" data-state="unknown">檢查 Bridge 中…</div></header>' +
     '<section class="panel settings"><div class="section-heading"><div><p class="eyebrow">CONNECTION</p><h2>Bridge 設定</h2></div><span class="section-note">配對碼只用於建立 binding</span></div>' +
     '<div class="settings-grid"><label>Bridge Server URL<input id="bridgeUrl" type="url"></label><label>Callback URL<input id="callbackUrl" type="url"></label></div>' +
-    '<div class="settings-actions"><label>目前 binding<select id="bindingSelect"></select></label><button id="saveConfig" class="button secondary">儲存設定</button><label>六碼綁定碼<input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair" class="button secondary">新增 Bridge 綁定</button></div><p id="binding" class="hint"></p><p id="browserServiceId" class="hint"></p><p id="configStatus" class="feedback"></p></section>' +
-    '<section class="panel add-job"><div class="section-heading"><div><p class="eyebrow">QUEUE</p><h2>新增下載任務</h2></div><span class="section-note">同一 FQDN 會依序處理</span></div><form id="form"><input id="url" type="url" placeholder="貼上小說或漫畫作品網址" required><select id="kind"><option value="auto">自動判斷</option><option value="novel">小說</option><option value="manga">漫畫</option></select><select id="jobBinding" required></select><button class="button primary">加入佇列</button></form><p id="status" class="feedback"></p></section>' +
+    '<div class="settings-actions"><div class="binding-summary"><span>目前唯一 Bridge binding</span><strong id="bindingId">尚未綁定</strong></div><button id="saveConfig" class="button secondary">儲存設定</button><label>六碼綁定碼<input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair" class="button secondary">重新綁定 Bridge</button></div><p id="binding" class="hint"></p><p id="browserServiceId" class="hint"></p><p id="configStatus" class="feedback"></p></section>' +
+    '<section class="panel add-job"><div class="section-heading"><div><p class="eyebrow">QUEUE</p><h2>新增下載任務</h2></div><span class="section-note">同一 FQDN 會依序處理</span></div><form id="form"><input id="url" type="url" placeholder="貼上小說或漫畫作品網址" required><select id="kind"><option value="auto">自動判斷</option><option value="novel">小說</option><option value="manga">漫畫</option></select><button class="button primary">加入佇列</button></form><p id="status" class="feedback"></p></section>' +
     '<section class="queue-header"><div><p class="eyebrow">DOWNLOAD QUEUE</p><h2>工作佇列</h2></div><div class="queue-tools"><div id="stats" class="stats"></div><button id="clearFailed" class="button ghost">清除失敗與取消紀錄</button></div></section><section id="jobs" class="jobs" aria-live="polite"></section></main><script src="ui.js"></script></body></html>';
 }
 
@@ -255,11 +256,11 @@ const server = http.createServer(async (request, response) => {
   if (request.method === 'GET' && url.pathname === '/ui.css') return serveStatic(response, 'ui.css', 'text/css; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/ui.js') return serveStatic(response, 'ui.js', 'text/javascript; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/') {
-    const token = crypto.randomBytes(24).toString('base64url');
+    const token = csrfStore.issue();
     response.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
-      'Set-Cookie': `wcf_csrf=${encodeURIComponent(token)}; SameSite=Strict; Path=/`,
+      'Set-Cookie': csrfStore.cookieHeader(token),
       'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'",
       'Referrer-Policy': 'no-referrer'
     });
@@ -283,6 +284,10 @@ const server = http.createServer(async (request, response) => {
   }
 
   if (!originAllowed(request)) return sendJson(response, 403, { error: 'origin_forbidden' });
+  if (request.method === 'GET' && url.pathname === '/api/csrf') {
+    const token = csrfStore.issue();
+    return sendJson(response, 200, { csrfToken: token }, { 'Set-Cookie': csrfStore.cookieHeader(token) });
+  }
   if (request.method === 'GET' && (url.pathname === '/api/state' || url.pathname === '/api/jobs')) {
     return sendJson(response, 200, { jobs: [...jobs.values()].map(publicJob), binding: publicBinding(config) });
   }
@@ -303,7 +308,13 @@ const server = http.createServer(async (request, response) => {
         throw new Error('binding_not_found');
       }
       config.defaultBridgeUrl = nextBridgeUrl;
-      if (body.activeBindingId) config.activeBindingId = String(body.activeBindingId);
+      const binding = getBinding(config, body.activeBindingId ? String(body.activeBindingId) : '');
+      if (binding) {
+        binding.bridgeUrl = nextBridgeUrl;
+        config.activeBindingId = binding.bindingId;
+      } else {
+        config.activeBindingId = null;
+      }
       config.callbackUrl = nextCallbackUrl;
       orchestrator.reconfigure(config);
       await saveConfig(config);
@@ -361,9 +372,32 @@ const server = http.createServer(async (request, response) => {
   if (request.method === 'POST' && ['/api/jobs/clear-failed', '/api/jobs/clear-terminal'].includes(url.pathname)) {
     if (!csrfAllowed(request)) return sendJson(response, 403, { error: 'csrf_forbidden' });
     const clearableJobs = [...jobs.values()].filter(job => isClearable(job.status));
+    const deletedJobIds = [];
+    const failures = [];
     try {
-      for (const job of clearableJobs) await orchestrator.delete(job.id);
-      return sendJson(response, 200, { deleted: clearableJobs.length, statuses: ['error', 'cancelled'] });
+      for (const job of clearableJobs) {
+        try {
+          const deletedJob = await orchestrator.delete(job.id);
+          if (deletedJob && !jobs.has(job.id)) deletedJobIds.push(job.id);
+        } catch (error) {
+          failures.push({ jobId: job.id, error: safeDiagnostic(error) });
+        }
+      }
+      publish();
+      if (failures.length > 0) {
+        return sendJson(response, 422, {
+          error: 'cleanup_incomplete',
+          deleted: deletedJobIds.length,
+          deletedJobIds,
+          failures,
+          statuses: ['error', 'cancelled']
+        });
+      }
+      return sendJson(response, 200, {
+        deleted: deletedJobIds.length,
+        deletedJobIds,
+        statuses: ['error', 'cancelled']
+      });
     } catch (error) {
       return sendJson(response, 422, { error: safeDiagnostic(error) });
     }

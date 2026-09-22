@@ -12,7 +12,7 @@ test('batch cleanup policy selects failed and cancelled jobs only', () => {
   assert.deepEqual(['queued', 'running', 'paused', 'complete', 'cancelled', 'error'].filter(isClearable), ['cancelled', 'error']);
 });
 
-test('pairing adds a fixed per-browser binding without revoking existing profiles', async () => {
+test('pairing updates the single WCF Bridge binding', async () => {
   const previousPair = BridgeClient.prototype.pair;
   const saved = [];
   try {
@@ -47,13 +47,13 @@ test('pairing adds a fixed per-browser binding without revoking existing profile
     const result = await orchestrator.pair('123456', {
       serviceClientId: '22222222-2222-4222-8222-222222222222'
     });
-    assert.equal(result.bindings.length, 2);
+    assert.equal(result.bindings.length, 1);
     assert.equal(result.bindings[0].bindingId, oldBindingId);
-    assert.equal(result.bindings[0].serviceClientId, oldServiceClientId);
-    assert.equal(result.bindings[1].paired, true);
-    assert.notEqual(result.bindings[1].serviceClientId, oldServiceClientId);
+    assert.equal(result.bindings[0].paired, true);
+    assert.equal(result.bindings[0].serviceClientId, '22222222-2222-4222-8222-222222222222');
     assert.equal(saved.length, 1);
-    assert.equal(saved[0].bindings.length, 2);
+    assert.equal(saved[0].bindings.length, 1);
+    assert.ok(saved[0].bindingAliases.includes(oldBindingId));
     assert.equal(saved[0].activeBindingId, result.activeBindingId);
   } finally {
     BridgeClient.prototype.pair = previousPair;

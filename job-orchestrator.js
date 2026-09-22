@@ -12,7 +12,7 @@ const MAX_IMAGES = 1024;
 const MANGA_ASSET_BATCH_SIZE = 8;
 const MAX_RETRIES = 2;
 const DEFAULT_MAX_CONCURRENT_JOBS = 5;
-const MAX_CONCURRENT_JOBS = 8;
+const MAX_CONCURRENT_JOBS = 5;
 
 class DownloadOrchestrator {
   constructor({ jobs, update, removeJob, config, saveConfig, outputDir, checkpointDir, maxConcurrentJobs, maxConcurrentJobsPerBinding }) {
@@ -71,14 +71,17 @@ class DownloadOrchestrator {
     ));
     const now = new Date().toISOString();
     const requestedServiceClientId = String(options.serviceClientId || '');
+    const previous = this.config.bindings?.[0] || null;
     const binding = {
-      bindingId: crypto.randomUUID(),
+      bindingId: previous?.bindingId || crypto.randomUUID(),
       bridgeUrl,
       expectedFingerprint: '',
-      serviceClientId: isUuid(requestedServiceClientId) ? requestedServiceClientId : crypto.randomUUID(),
+      serviceClientId: isUuid(requestedServiceClientId)
+        ? requestedServiceClientId
+        : (previous?.serviceClientId || crypto.randomUUID()),
       serviceCredential: '',
       browserClientId: '',
-      createdAt: now,
+      createdAt: previous?.createdAt || now,
       updatedAt: now
     };
     const client = new BridgeClient(binding);
@@ -88,7 +91,11 @@ class DownloadOrchestrator {
     binding.expectedFingerprint = client.fingerprint || result.fingerprint || '';
     binding.updatedAt = new Date().toISOString();
     this.config.defaultBridgeUrl = bridgeUrl;
-    this.config.bindings.push(binding);
+    this.config.bindings = [binding];
+    this.config.bindingAliases = [...new Set([
+      ...(this.config.bindingAliases || []),
+      binding.bindingId
+    ])];
     this.config.activeBindingId = binding.bindingId;
     await this.saveConfig(this.config);
     this.refreshClients();
@@ -180,6 +187,7 @@ class DownloadOrchestrator {
   async readJobManifest(job) {
     const value = await this.readCheckpoint(job, 'manifest.json');
     if (!value || typeof value.title !== 'string' || !Array.isArray(value.chapters) || value.chapters.length === 0) return null;
+    if (requiresLinovelManifestRefresh(job, value)) return null;
     return value;
   }
 
@@ -464,20 +472,32 @@ class DownloadOrchestrator {
         for (let index = 0; index < chapters.length; index += 1) {
           this.assertActive(job);
           const chapter = chapters[index];
-          const savedChapter = await this.readChapterCheckpoint(job, index);
+          let savedChapter = await this.readChapterCheckpoint(job, index);
+          if (savedChapter?.contentHtml && !checkpointMatchesChapter(savedChapter, chapter.url)) {
+            savedChapter = null;
+          }
           if (savedChapter?.contentHtml) {
             contents.push(savedChapter);
             this.update(job, { progress: { phase: 'resuming', completed: index + 1, total: chapters.length } });
             continue;
           }
-          const result = await call({
-            url: job.url,
-            chapterUrl: chapter.url,
-            kind: 'novel',
-            mode: 'chapter',
-            maxPages: MAX_PAGES
-          });
-          if (!result?.contentHtml) throw new Error('novel_chapter_content_missing');
+          let result;
+          for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+            result = await call({
+              url: job.url,
+              chapterUrl: chapter.url,
+              kind: 'novel',
+              mode: 'chapter',
+              maxPages: MAX_PAGES
+            });
+            if (!result?.contentHtml) throw new Error('novel_chapter_content_missing');
+            const hasInlineImages = /<img\b/i.test(result.contentHtml);
+            const imageCount = Array.isArray(result.images) ? result.images.length : 0;
+            if (!hasInlineImages || imageCount > 0) break;
+            if (attempt === MAX_RETRIES) throw new Error('novel_inline_images_missing');
+            this.update(job, { progress: { ...(job.progress || {}), phase: 'retrying', retry: attempt + 1 } });
+            await delay(1000 * (attempt + 1));
+          }
           const evidence = Array.isArray(result.images) ? result.images : [];
           if (/<img\b/i.test(result.contentHtml) && evidence.length === 0) {
             throw new Error('novel_inline_images_missing');
@@ -726,6 +746,26 @@ function safeDiagnostic(error) {
   return value || 'job_failed';
 }
 
+function requiresLinovelManifestRefresh(job, manifest) {
+  if (job.kind !== 'novel' || !Array.isArray(manifest?.chapters)) return false;
+  try {
+    return new URL(String(job.url)).hostname === 'tw.linovelib.com' && manifest.chapters.some(chapter =>
+      /^\/novel\/\d+\/vol_\d+\.html$/i.test(new URL(String(chapter?.url || '')).pathname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function checkpointMatchesChapter(checkpoint, chapterUrl) {
+  if (!checkpoint?.baseUrl) return true;
+  try {
+    return new URL(String(checkpoint.baseUrl)).href === new URL(String(chapterUrl)).href;
+  } catch {
+    return false;
+  }
+}
+
 function isRetryable(error) {
   const value = String(error?.code || error?.message || '');
   return isRecoverableBridgeDiagnostic(value) || /transport|timeout|offline|session|network|busy/i.test(value);
@@ -736,7 +776,10 @@ function isRecoverableBridgeDiagnostic(value) {
     'browser_client_disconnected',
     'browser_client_offline',
     'browser_command_timeout',
+    'browser_content_selector_timeout',
+    'browser_content_ready_timeout',
     'browser_navigation_timeout',
+    'novel_inline_images_missing',
     'bridge_transport_failed',
     'secure_transport_failed'
   ]).has(String(value || '').toLowerCase());
