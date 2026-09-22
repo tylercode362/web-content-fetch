@@ -65,6 +65,11 @@ test('queue source contains expandable jobs and structured download rendering', 
   assert.match(uiSource, /node\('details'/);
   assert.match(uiSource, /pendingActions/);
   assert.match(uiSource, /delete_not_confirmed/);
+  assert.match(uiSource, /章節進度：/);
+  assert.match(uiSource, /progress\.completed/);
+  assert.match(uiSource, /chapterDownloadRatio/);
+  assert.match(uiSource, /目前章節下載/);
+  assert.ok(uiSource.indexOf("className: 'job-progress'") < uiSource.indexOf("className: 'outputs'"));
 });
 
 test('queue UI uses one binding, has CSRF recovery, and reports terminal cleanup results', async () => {
@@ -80,6 +85,9 @@ test('queue UI uses one binding, has CSRF recovery, and reports terminal cleanup
   assert.match(uiSource, /csrf_forbidden/);
   assert.match(uiSource, /renewCsrf/);
   assert.match(cssSource, /form #url{min-width:0/);
+  assert.match(cssSource, /\.job-grid\{display:flex;flex-direction:column/);
+  assert.match(cssSource, /\.outputs\{order:2;width:100%;border:0;border-top:1px solid/);
+  assert.match(cssSource, /\.chapter-download-bar\{/);
 });
 
 test('reusable deployment script is confirmation-gated and health-checked', async () => {

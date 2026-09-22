@@ -85,26 +85,40 @@
 
   const progressInfo = job => {
     const progress = job.progress || {};
+    const validCount = value => Number.isInteger(value) && value >= 0 ? value : null;
+    const total = [progress.chapterTotal, progress.total, job.chapterCount]
+      .map(validCount)
+      .find(value => value !== null) ?? null;
+    const reportedCompleted = validCount(progress.completed);
+    const completed = total === null
+      ? (reportedCompleted ?? 0)
+      : Math.min(total, Math.max(0, reportedCompleted ?? (job.status === 'complete' ? total : 0)));
+    let detailLabel = progress.phase || '等待中';
+    let chapterDownloadLabel = '等待目前章節';
+    let chapterDownloadRatio = 0;
     if (Number.isInteger(progress.image) && Number.isInteger(progress.imageTotal)) {
-      return {
-        label: '第 ' + (progress.chapter || '?') + ' / ' + (progress.chapterTotal || '?') +
-          ' 章 · 圖片 ' + progress.image + ' / ' + progress.imageTotal,
-        ratio: progress.imageTotal ? progress.image / progress.imageTotal : 0
-      };
+      detailLabel = '目前第 ' + (progress.chapter || '?') + ' 章 · 圖片 ' + progress.image + ' / ' + progress.imageTotal;
+      chapterDownloadLabel = '第 ' + (progress.chapter || '?') + ' 章 · 圖片 ' + progress.image + ' / ' + progress.imageTotal;
+      chapterDownloadRatio = progress.imageTotal > 0 ? progress.image / progress.imageTotal : 0;
+    } else if (Number.isInteger(progress.chapter)) {
+      detailLabel = '目前第 ' + progress.chapter + ' 章 · ' + (progress.phase || '處理中');
+      if (progress.phase === 'writing_epub') {
+        chapterDownloadLabel = '第 ' + progress.chapter + ' 章圖片已完成，正在產生檔案';
+        chapterDownloadRatio = 1;
+      } else {
+        chapterDownloadLabel = '第 ' + progress.chapter + ' 章 · ' + (progress.phase || '處理中');
+      }
+    } else if (job.status === 'complete' || progress.phase === 'complete') {
+      chapterDownloadLabel = '全部章節已完成';
+      chapterDownloadRatio = 1;
     }
-    if (Number.isInteger(progress.chapter) && Number.isInteger(progress.chapterTotal)) {
-      return {
-        label: '第 ' + progress.chapter + ' / ' + progress.chapterTotal + ' 章 · ' + (progress.phase || ''),
-        ratio: progress.chapterTotal ? progress.chapter / progress.chapterTotal : 0
-      };
-    }
-    if (Number.isInteger(progress.completed) && Number.isInteger(progress.total) && progress.total > 0) {
-      return {
-        label: progress.completed + ' / ' + progress.total,
-        ratio: progress.completed / progress.total
-      };
-    }
-    return { label: progress.phase || '等待中', ratio: 0 };
+    return {
+      chapterLabel: '章節進度：' + completed + ' / ' + (total === null ? '-' : total) + '（已完成／總章節）',
+      detailLabel,
+      ratio: total > 0 ? completed / total : 0,
+      chapterDownloadLabel,
+      chapterDownloadRatio
+    };
   };
 
   const appendDownload = (parent, download) => {
@@ -181,14 +195,26 @@
     }
     const bar = node('div', { className: 'progress-bar' });
     bar.style.width = String(Math.max(0, Math.min(100, progress.ratio * 100))) + '%';
+    const chapterDownloadBar = node('div', { className: 'progress-bar chapter-download-bar' });
+    chapterDownloadBar.style.width = String(Math.max(0, Math.min(100, progress.chapterDownloadRatio * 100))) + '%';
     const progressSummary = node('p', { className: 'job-meta' }, [
-      node('span', { textContent: '進度：' + progress.label }),
-      node('span', { textContent: '類型：' + (job.kind || '-') }),
-      node('span', { textContent: '章節：' + (job.chapterCount || job.progress?.chapterTotal || '-') })
+      node('span', { className: 'job-chapter-progress', textContent: progress.chapterLabel }),
+      node('span', { textContent: progress.detailLabel }),
+      node('span', { textContent: '類型：' + (job.kind || '-') })
     ]);
     const left = node('div', { className: 'job-progress' }, [
       progressSummary,
-      node('div', { className: 'progress-track' }, [bar])
+      node('div', { className: 'progress-section' }, [
+        node('div', { className: 'progress-caption', textContent: '全部章節' }),
+        node('div', { className: 'progress-track', 'aria-label': '全部章節進度' }, [bar])
+      ]),
+      node('div', { className: 'progress-section current-chapter-progress' }, [
+        node('div', { className: 'progress-caption' }, [
+          node('span', { textContent: '目前章節下載' }),
+          node('span', { className: 'progress-caption-detail', textContent: progress.chapterDownloadLabel })
+        ]),
+        node('div', { className: 'progress-track', 'aria-label': '目前章節下載進度' }, [chapterDownloadBar])
+      ])
     ]);
     if (job.diagnostic) {
       left.append(node('p', {
