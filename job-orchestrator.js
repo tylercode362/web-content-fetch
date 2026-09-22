@@ -746,6 +746,10 @@ function isTerminal(status) {
   return status === 'complete' || status === 'error' || status === 'cancelled';
 }
 
+function isClearable(status) {
+  return status === 'error' || status === 'cancelled';
+}
+
 function isAbortError(error) {
   return error?.name === 'AbortError' || /request_aborted|operation_cancelled/i.test(String(error?.message || error));
 }
@@ -784,5 +788,6 @@ module.exports = {
   DEFAULT_MAX_CONCURRENT_JOBS,
   publicBinding,
   safeDiagnostic,
-  isTerminal
+  isTerminal,
+  isClearable
 };

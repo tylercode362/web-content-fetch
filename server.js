@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const JSZip = require('jszip');
-const { DownloadOrchestrator, publicBinding, safeDiagnostic, isTerminal } = require('./job-orchestrator');
+const { DownloadOrchestrator, publicBinding, safeDiagnostic, isClearable } = require('./job-orchestrator');
 const { normalizeBaseUrl } = require('./bridge-client');
 const { applyBindingToJob, getBinding, normalizeConfig } = require('./binding-store');
 const { publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('./job-view');
@@ -244,7 +244,7 @@ function renderHtml(token) {
     '<div class="settings-grid"><label>Bridge Server URL<input id="bridgeUrl" type="url"></label><label>Callback URL<input id="callbackUrl" type="url"></label></div>' +
     '<div class="settings-actions"><label>目前 binding<select id="bindingSelect"></select></label><button id="saveConfig" class="button secondary">儲存設定</button><label>六碼綁定碼<input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair" class="button secondary">新增 Bridge 綁定</button></div><p id="binding" class="hint"></p><p id="browserServiceId" class="hint"></p><p id="configStatus" class="feedback"></p></section>' +
     '<section class="panel add-job"><div class="section-heading"><div><p class="eyebrow">QUEUE</p><h2>新增下載任務</h2></div><span class="section-note">同一 FQDN 會依序處理</span></div><form id="form"><input id="url" type="url" placeholder="貼上小說或漫畫作品網址" required><select id="kind"><option value="auto">自動判斷</option><option value="novel">小說</option><option value="manga">漫畫</option></select><select id="jobBinding" required></select><button class="button primary">加入佇列</button></form><p id="status" class="feedback"></p></section>' +
-    '<section class="queue-header"><div><p class="eyebrow">DOWNLOAD QUEUE</p><h2>工作佇列</h2></div><div class="queue-tools"><div id="stats" class="stats"></div><button id="clearTerminal" class="button ghost">清除已結束紀錄</button></div></section><section id="jobs" class="jobs" aria-live="polite"></section></main><script src="ui.js"></script></body></html>';
+    '<section class="queue-header"><div><p class="eyebrow">DOWNLOAD QUEUE</p><h2>工作佇列</h2></div><div class="queue-tools"><div id="stats" class="stats"></div><button id="clearFailed" class="button ghost">清除失敗與取消紀錄</button></div></section><section id="jobs" class="jobs" aria-live="polite"></section></main><script src="ui.js"></script></body></html>';
 }
 
 const server = http.createServer(async (request, response) => {
@@ -358,12 +358,12 @@ const server = http.createServer(async (request, response) => {
       return sendJson(response, 400, { error: error.message === 'url_invalid' ? 'url_invalid' : 'invalid_json' });
     }
   }
-  if (request.method === 'POST' && url.pathname === '/api/jobs/clear-terminal') {
+  if (request.method === 'POST' && ['/api/jobs/clear-failed', '/api/jobs/clear-terminal'].includes(url.pathname)) {
     if (!csrfAllowed(request)) return sendJson(response, 403, { error: 'csrf_forbidden' });
-    const terminalJobs = [...jobs.values()].filter(job => isTerminal(job.status));
+    const clearableJobs = [...jobs.values()].filter(job => isClearable(job.status));
     try {
-      for (const job of terminalJobs) await orchestrator.delete(job.id);
-      return sendJson(response, 200, { deleted: terminalJobs.length });
+      for (const job of clearableJobs) await orchestrator.delete(job.id);
+      return sendJson(response, 200, { deleted: clearableJobs.length, statuses: ['error', 'cancelled'] });
     } catch (error) {
       return sendJson(response, 422, { error: safeDiagnostic(error) });
     }

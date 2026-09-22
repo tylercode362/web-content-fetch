@@ -6,7 +6,11 @@ const test = require('node:test');
 const sharp = require('sharp');
 const { BridgeClient } = require('../bridge-client');
 const { normalizeConfig } = require('../binding-store');
-const { DownloadOrchestrator } = require('../job-orchestrator');
+const { DownloadOrchestrator, isClearable } = require('../job-orchestrator');
+
+test('batch cleanup policy selects failed and cancelled jobs only', () => {
+  assert.deepEqual(['queued', 'running', 'paused', 'complete', 'cancelled', 'error'].filter(isClearable), ['cancelled', 'error']);
+});
 
 test('pairing adds a fixed per-browser binding without revoking existing profiles', async () => {
   const previousPair = BridgeClient.prototype.pair;

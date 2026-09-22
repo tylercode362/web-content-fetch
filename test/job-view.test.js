@@ -57,7 +57,9 @@ test('queue source contains expandable jobs and structured download rendering', 
   assert.match(source, /ui\.css/);
   assert.match(source, /outputGroups/);
   assert.match(source, /download-all/);
+  assert.match(source, /clear-failed/);
   assert.match(source, /clear-terminal/);
+  assert.match(source, /isClearable/);
   assert.doesNotMatch(source, /decorateJobs=/);
   assert.match(uiSource, /node\('summary'/);
   assert.match(uiSource, /node\('details'/);
