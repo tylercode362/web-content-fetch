@@ -165,7 +165,9 @@ test('manga output optimizes images and writes Kobo inline dimensions in order',
     ]
   });
   const epub = await readZip(result.epubPath);
+  const kepub = await readZip(result.kepubPath);
   const opf = await epub.file('OEBPS/content.opf').async('text');
+  const css = await epub.file('OEBPS/style.css').async('text');
   const first = await epub.file('OEBPS/text/page-0001.xhtml').async('text');
   const second = await epub.file('OEBPS/text/page-0002.xhtml').async('text');
   const third = await epub.file('OEBPS/text/page-0003.xhtml').async('text');
@@ -174,7 +176,11 @@ test('manga output optimizes images and writes Kobo inline dimensions in order',
   assert.match(third, /height="585" width="1404"/);
   assert.match(opf, /<meta property="rendition:layout">pre-paginated<\/meta>/);
   assert.match(opf, /<meta property="rendition:spread">none<\/meta>/);
+  assert.match(opf, /<item id="css" href="style\.css" media-type="text\/css"\/>/);
   assert.match(opf, /<itemref idref="page-0001" properties="rendition:spread-none"\/>/);
+  assert.match(css, /html,body\{margin:0;padding:0;\}/);
+  assert.match(css, /svg\{display:block;margin:0;padding:0;\}/);
+  assert.match(first, /<link rel="stylesheet" type="text\/css" href="\.\.\/style\.css"\/>/);
   assert.match(first, /<svg[^>]+viewBox="0 0 1404 1872"[^>]*><image height="1872" width="1404" x="0" xlink:href="\.\.\/images\/image-0001\.jpg" y="0"\/>/);
   assert.doesNotMatch(first, /<svg[^>]+(?:width=|height=|preserveAspectRatio=|style=)/);
   assert.match(third, /viewBox="0 0 1404 585"/);
@@ -183,6 +189,16 @@ test('manga output optimizes images and writes Kobo inline dimensions in order',
   assert.match(first, /images\/image-0001\.jpg/);
   assert.match(second, /images\/image-0002\.jpg/);
   assert.match(third, /images\/image-0003\.jpg/);
+  const kepubFirst = await kepub.file('OEBPS/text/page-0001.xhtml').async('text');
+  const kepubSecond = await kepub.file('OEBPS/text/page-0002.xhtml').async('text');
+  const kepubThird = await kepub.file('OEBPS/text/page-0003.xhtml').async('text');
+  assert.match(kepubFirst, /<meta name="viewport" content="width=1404, height=1872"\/>/);
+  assert.match(kepubSecond, /<meta name="viewport" content="width=900, height=1200"\/>/);
+  assert.match(kepubThird, /<meta name="viewport" content="width=1404, height=585"\/>/);
+  assert.match(kepubFirst, /viewBox="0 0 1404 1872"/);
+  assert.match(kepubSecond, /viewBox="0 0 900 1200"/);
+  assert.match(kepubThird, /viewBox="0 0 1404 585"/);
+  assert.match(kepubFirst, /href="\.\.\/style\.css"/);
   assert.equal(result.pageCount, 3);
   assert.equal(await fs.stat(result.kepubPath).then(stat => stat.isFile()), true);
 });

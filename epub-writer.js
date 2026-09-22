@@ -16,6 +16,7 @@ const AD_MARKER_RE = /(?:^|[^a-z0-9])(?:ad|ads|advert|advertisement|sponsor|spon
 const AD_TEXT_RE = /(?:廣告|贊助|彈窗|彈出)/i;
 const MAX_TITLE_LENGTH = 160;
 const MAX_FILENAME_STEM_LENGTH = 80;
+const MANGA_PAGE_CSS = 'html,body{margin:0;padding:0;}svg{display:block;margin:0;padding:0;}';
 const TITLE_SITE_SUFFIX_RE = /(?:最新漫畫|最新漫画|小說|小説|漫畫|漫画)(?:線上|线上|綫上|在線|在线)?(?:看|觀看|观看|閱讀|阅读)?(?:[_\s|｜—–-]|$)|(?:看漫畫|看漫画|無限動漫|无限动漫|嗶哩輕小說|哔哩轻小说|8comic(?:\.com)?|Fami通文庫|Fami通文库)/iu;
 const TITLE_DOMAIN_RE = /(?:https?:\/\/|www\.)[^\s|｜]+|\b[\p{L}\p{N}-]+\.(?:com|net|org|tw|cn|cc|me|io)(?:\/[^\s|｜]*)?/giu;
 
@@ -208,6 +209,10 @@ async function writeEpub({ outputDir, filename, title, entries, images = [], fix
   const manifest = [];
   const spine = [];
   const nav = [];
+  if (fixedLayout) {
+    zip.file('OEBPS/style.css', MANGA_PAGE_CSS);
+    manifest.push('<item id="css" href="style.css" media-type="text/css"/>');
+  }
   for (const image of images) {
     const imageHref = `images/${image.filename}`;
     zip.file(`OEBPS/${imageHref}`, image.data);
@@ -303,7 +308,7 @@ function renderImageXhtml(entry, imageHref) {
   const width = Number(image.width);
   const height = Number(image.height);
   return `<?xml version="1.0" encoding="UTF-8"?>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-Hant" lang="zh-Hant"><head><title>${escapeXml(entry.title)}</title><meta name="viewport" content="width=${width}, height=${height}"/></head><body style="margin:0;padding:0;text-align:center;background:#fff">${renderKoboSvg(image, `../${imageHref}`)}</body></html>`;
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="zh-Hant" lang="zh-Hant"><head><title>${escapeXml(entry.title)}</title><meta name="viewport" content="width=${width}, height=${height}"/><link rel="stylesheet" type="text/css" href="../style.css"/></head><body>${renderKoboSvg(image, `../${imageHref}`)}</body></html>`;
 }
 
 function renderInlineImage(image, imageHref, margin) {
