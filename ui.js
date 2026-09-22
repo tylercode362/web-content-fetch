@@ -484,12 +484,11 @@
       } else {
         setFeedback('#status', action === 'cancel' ? '工作已取消，相關檔案已清除' : '工作操作完成');
       }
-      await refresh();
     } catch (error) {
       setFeedback('#status', '操作失敗：' + error.message, true);
-      await refresh();
     } finally {
       pendingActions.delete(id);
+      await refresh();
     }
   });
 

@@ -77,6 +77,7 @@ test('queue source contains expandable jobs and structured download rendering', 
   assert.match(uiSource, /bridgeCompleted/);
   assert.match(uiSource, /目前章節下載/);
   assert.ok(uiSource.indexOf("className: 'job-progress'") < uiSource.indexOf("className: 'outputs'"));
+  assert.match(uiSource, /pendingActions\.delete\(id\);\s*await refresh\(\);/s);
 });
 
 test('queue UI uses one binding, has CSRF recovery, and reports terminal cleanup results', async () => {
