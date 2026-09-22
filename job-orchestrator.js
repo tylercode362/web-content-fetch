@@ -317,7 +317,9 @@ class DownloadOrchestrator {
 
   resume(jobId) {
     const job = this.jobs.get(jobId);
-    if (!job || isTerminal(job.status) || job.status !== 'paused') return job || null;
+    const recoverableError = job?.status === 'error' && isRecoverableBridgeDiagnostic(job.diagnostic);
+    if (!job || job.status === 'complete' || job.status === 'cancelled' ||
+        (job.status !== 'paused' && !recoverableError)) return job || null;
     job.pauseRequested = false;
     job.cancelRequested = false;
     this.update(job, {
@@ -557,6 +559,12 @@ class DownloadOrchestrator {
           progress: { ...(job.progress || {}), phase: 'paused' },
           diagnostic: null
         });
+      } else if (isRecoverableBridgeDiagnostic(safeDiagnostic(error))) {
+        this.update(job, {
+          status: 'paused',
+          progress: { ...(job.progress || {}), phase: 'paused' },
+          diagnostic: safeDiagnostic(error)
+        });
       } else {
         this.update(job, {
           status: 'error',
@@ -609,7 +617,18 @@ function safeDiagnostic(error) {
 
 function isRetryable(error) {
   const value = String(error?.code || error?.message || '');
-  return /transport|timeout|offline|session|network|busy/i.test(value);
+  return isRecoverableBridgeDiagnostic(value) || /transport|timeout|offline|session|network|busy/i.test(value);
+}
+
+function isRecoverableBridgeDiagnostic(value) {
+  return new Set([
+    'browser_client_disconnected',
+    'browser_client_offline',
+    'browser_command_timeout',
+    'browser_navigation_timeout',
+    'bridge_transport_failed',
+    'secure_transport_failed'
+  ]).has(String(value || '').toLowerCase());
 }
 
 function isTerminal(status) {

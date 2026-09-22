@@ -271,6 +271,95 @@ test('paused jobs resume from checkpoints and cancellation removes job files', a
   await assert.rejects(() => fs.access(orchestrator.stagePath(job)));
 });
 
+test('browser client disconnect is retried with the existing binding', async () => {
+  const job = {
+    id: 'job-disconnect-retry',
+    status: 'running',
+    progress: { phase: 'fetching_chapters', completed: 1, total: 3 }
+  };
+  const phases = [];
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]),
+    config: normalizeConfig({}),
+    saveConfig: async () => {},
+    outputDir: '/tmp/output',
+    update(value, change) {
+      Object.assign(value, change);
+      phases.push(value.progress?.phase);
+    }
+  });
+  let attempts = 0;
+  const fakeClient = {
+    async contentFetch(body) {
+      assert.equal(body.operationKey, job.id);
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error('browser_client_disconnected');
+        error.code = 'browser_client_disconnected';
+        throw error;
+      }
+      return { success: true };
+    }
+  };
+
+  const result = await orchestrator.callWithRetry(
+    job,
+    fakeClient,
+    { operationKey: job.id, mode: 'chapters' },
+    new AbortController().signal
+  );
+
+  assert.deepEqual(result, { success: true });
+  assert.equal(attempts, 2);
+  assert.ok(phases.includes('retrying'));
+});
+
+test('recoverable disconnect error jobs resume without removing checkpoints', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-disconnect-'));
+  const job = {
+    id: 'job-disconnect-resume',
+    url: 'https://www.8comic.com/html/26490.html',
+    kind: 'manga',
+    status: 'error',
+    diagnostic: 'browser_client_disconnected',
+    progress: { phase: 'failed', completed: 0, total: 11 }
+  };
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]),
+    config: normalizeConfig({}),
+    saveConfig: async () => {},
+    outputDir: path.join(root, 'output'),
+    checkpointDir: path.join(root, 'checkpoints'),
+    update(value, change) { Object.assign(value, change); }
+  });
+  await orchestrator.ensureStage(job);
+  await orchestrator.writeJobManifest(job, '阿邦', [{ url: job.url, title: '第一章' }]);
+  let drainCount = 0;
+  orchestrator.drain = async () => { drainCount += 1; };
+
+  const resumed = orchestrator.resume(job.id);
+
+  assert.equal(resumed.status, 'queued');
+  assert.equal(resumed.diagnostic, null);
+  assert.equal(drainCount, 1);
+  await assert.doesNotReject(() => fs.access(orchestrator.checkpointPath(job)));
+  await assert.doesNotReject(() => fs.access(orchestrator.stagePath(job)));
+});
+
+test('non-recoverable error jobs remain terminal', async () => {
+  const job = { id: 'job-parser-error', status: 'error', diagnostic: 'chapter_list_empty' };
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]),
+    config: normalizeConfig({}),
+    saveConfig: async () => {},
+    outputDir: '/tmp/output',
+    update(value, change) { Object.assign(value, change); }
+  });
+
+  assert.equal(orchestrator.resume(job.id), job);
+  assert.equal(job.status, 'error');
+});
+
 test('terminal job deletion removes its record, outputs and checkpoints', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-delete-'));
   const job = {
