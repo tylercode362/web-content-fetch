@@ -410,7 +410,44 @@ test('8Comic manga images are fetched in bounded batches', async () => {
   assert.equal(job.outputGroups.length, 1);
   assert.equal(job.outputGroups[0].title, '第一章');
   assert.equal(publishedSnapshots.length > 0, true);
-  assert.match(job.outputs[0], /^job-manga-batch-/);
+  assert.equal(job.outputs[0], '阿邦-chapter-0001.epub');
+  assert.equal(job.outputs[1], '阿邦-chapter-0001.kepub.epub');
+  assert.doesNotMatch(job.outputs[0], /job-manga-batch|[0-9a-f]{8}-[0-9a-f-]{27}/i);
+});
+
+test('published output filenames omit job UUIDs and avoid same-title collisions', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-output-names-'));
+  const outputDir = path.join(root, 'output');
+  const config = normalizeConfig({});
+  const createOrchestrator = job => new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]),
+    config,
+    saveConfig: async () => {},
+    outputDir,
+    checkpointDir: path.join(root, 'checkpoints'),
+    update(value, change) { Object.assign(value, change); }
+  });
+  const firstJob = { id: 'job-output-name-a', outputs: [] };
+  const secondJob = { id: 'job-output-name-b', outputs: [] };
+  const first = createOrchestrator(firstJob);
+  const second = createOrchestrator(secondJob);
+  const firstStage = await first.ensureStage(firstJob);
+  const secondStage = await second.ensureStage(secondJob);
+  const names = ['阿邦-chapter-0001.epub', '阿邦-chapter-0001.kepub.epub'];
+  for (const name of names) {
+    await fs.writeFile(path.join(firstStage, name), 'first');
+    await fs.writeFile(path.join(secondStage, name), 'second');
+  }
+
+  const firstPublished = await first.publishOutputs(firstJob, names.map(name => path.join(firstStage, name)));
+  firstJob.outputs = firstPublished;
+  const secondPublished = await second.publishOutputs(secondJob, names.map(name => path.join(secondStage, name)));
+
+  assert.deepEqual(firstPublished, names);
+  assert.deepEqual(secondPublished, ['阿邦-2-chapter-0001.epub', '阿邦-2-chapter-0001.kepub.epub']);
+  assert.ok(secondPublished.every(name => !name.includes(secondJob.id)));
+  assert.equal(await fs.readFile(path.join(outputDir, names[0]), 'utf8'), 'first');
+  assert.equal(await fs.readFile(path.join(outputDir, secondPublished[0]), 'utf8'), 'second');
 });
 
 test('recoverable disconnect error jobs resume without removing checkpoints', async () => {

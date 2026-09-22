@@ -32,6 +32,7 @@ class DownloadOrchestrator {
     this.runningFqdns = new Set();
     this.controllers = new Map();
     this.clients = new Map();
+    this.outputPublishTail = Promise.resolve();
     this.refreshClients();
   }
 
@@ -220,19 +221,73 @@ class DownloadOrchestrator {
     await Promise.all(paths.map(filePath => this.assertPathMissing(filePath, 'job_delete_incomplete')));
   }
 
-  async publishOutputs(job, files, options = {}) {
+  async publishOutputs(job, files) {
+    const previous = this.outputPublishTail;
+    let release;
+    this.outputPublishTail = new Promise(resolve => { release = resolve; });
+    await previous;
+    try {
+      return await this.publishOutputsLocked(job, files);
+    } finally {
+      release();
+    }
+  }
+
+  async publishOutputsLocked(job, files) {
     const stage = path.resolve(await this.ensureStage(job));
-    const published = [];
-    const prefix = options.prefix ? `${this.storageKey(job)}-` : '';
-    for (const file of files) {
+    const sources = (Array.isArray(files) ? files : []).map(file => {
       const source = path.resolve(String(file));
       if (source !== stage && !source.startsWith(stage + path.sep)) throw new Error('job_output_path_invalid');
       const relative = path.relative(stage, source);
       const name = path.basename(relative);
       if (!name || name.startsWith('.')) throw new Error('job_output_path_invalid');
-      const destination = path.join(this.outputDir, `${prefix}${name}`);
-      await fsp.rm(destination, { force: true });
-      await fsp.rename(source, destination);
+      return { source, name };
+    });
+    const owned = new Set(this.publishedOutputNames(job));
+    const reserved = new Set();
+    const assignments = new Map();
+    const groups = new Map();
+    sources.forEach((source, index) => {
+      const key = publicOutputStem(source.name);
+      const group = groups.get(key) || [];
+      group.push({ source, index });
+      groups.set(key, group);
+    });
+
+    for (const group of groups.values()) {
+      let assigned = false;
+      for (let suffix = 0; suffix <= 10000; suffix += 1) {
+        const names = group.map(item => appendOutputSuffix(item.source.name, suffix));
+        if (new Set(names).size !== names.length || names.some(name => reserved.has(name))) continue;
+        let available = true;
+        for (const name of names) {
+          try {
+            const stat = await fsp.lstat(path.join(this.outputDir, name));
+            if (!owned.has(name) || !stat.isFile()) {
+              available = false;
+              break;
+            }
+          } catch (error) {
+            if (error?.code !== 'ENOENT') throw error;
+          }
+        }
+        if (!available) continue;
+        group.forEach((item, index) => {
+          assignments.set(item.index, names[index]);
+          reserved.add(names[index]);
+        });
+        assigned = true;
+        break;
+      }
+      if (!assigned) throw new Error('output_name_collision');
+    }
+
+    const published = [];
+    for (const [index, item] of sources.entries()) {
+      const name = assignments.get(index);
+      const destination = path.join(this.outputDir, name);
+      if (owned.has(name)) await fsp.rm(destination, { force: true });
+      await fsp.rename(item.source, destination);
       published.push(relativeOutput(this.outputDir, destination));
     }
     return published;
@@ -567,7 +622,7 @@ class DownloadOrchestrator {
         const stagedFiles = await this.existingStageFiles(job, savedChapter?.files);
         if (stagedFiles) {
           const chapterTitle = cleanBookTitle(savedChapter.title || chapter.title, `第 ${index + 1} 章`);
-          const published = await this.publishOutputs(job, stagedFiles, { prefix: true });
+          const published = await this.publishOutputs(job, stagedFiles);
           await this.recordMangaOutput(job, index, chapterTitle, published);
           await this.writeChapterCheckpoint(job, index, { title: chapterTitle, files: published });
           this.update(job, { progress: { phase: 'resuming', completed: index + 1, total: chapters.length } });
@@ -646,7 +701,7 @@ class DownloadOrchestrator {
           images: assets
         });
         const chapterTitle = cleanBookTitle(chapter.title || chapterResult.title || '第 ' + (index + 1) + ' 章', '第 ' + (index + 1) + ' 章');
-        const published = await this.publishOutputs(job, output.files, { prefix: true });
+        const published = await this.publishOutputs(job, output.files);
         await this.recordMangaOutput(job, index, chapterTitle, published);
         await this.writeChapterCheckpoint(job, index, { title: chapterTitle, files: published });
         this.assertActive(job);
@@ -739,6 +794,28 @@ function isEightComicChapter(chapter, evidence) {
 
 function relativeOutput(outputDir, filePath) {
   return path.relative(outputDir, filePath).replaceAll('\\', '/');
+}
+
+function publicOutputStem(filename) {
+  const value = String(filename || '');
+  const lower = value.toLowerCase();
+  if (lower.endsWith('.kepub.epub')) return value.slice(0, -'.kepub.epub'.length);
+  if (lower.endsWith('.epub')) return value.slice(0, -'.epub'.length);
+  return value;
+}
+
+function appendOutputSuffix(filename, suffix) {
+  if (!suffix) return filename;
+  const numericSuffix = Number(suffix) + 1;
+  const value = String(filename || '');
+  const lower = value.toLowerCase();
+  const extension = lower.endsWith('.kepub.epub')
+    ? value.slice(-'.kepub.epub'.length)
+    : path.extname(value);
+  const stem = extension ? value.slice(0, -extension.length) : value;
+  const chapter = stem.match(/^(.*)(-chapter-\d{4})$/i);
+  const suffixedStem = chapter ? `${chapter[1]}-${numericSuffix}${chapter[2]}` : `${stem}-${numericSuffix}`;
+  return `${suffixedStem}${extension}`;
 }
 
 function safeDiagnostic(error) {
