@@ -19,4 +19,6 @@ The service MUST preserve the verified source image aspect ratio when optimizing
 - **THEN** a novel inline `img` MUST include inline `width`, `height`, and fixed-pixel style values matching the optimized bytes
 - **AND** a manga page MUST use an SVG `viewBox` and child `image` whose width and height match the optimized bytes
 - **AND** the XHTML viewport MUST use the same verified width and height
+- **AND** a manga EPUB MUST declare `rendition:layout` as `pre-paginated` and `rendition:spread` as `none`
+- **AND** each manga page spine item MUST declare `rendition:spread-none`
 - **AND** the layout MUST NOT depend on `aspect-ratio`, `object-fit`, `width:100%`, or `height:auto`

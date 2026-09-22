@@ -6,7 +6,7 @@
 
 ## XHTML layout
 
-Novel inline images retain the optimized pixel dimensions as inline `width`, `height`, and fixed-pixel `style` values. Manga page XHTML follows the older epub-gen approach: the page contains an SVG with an exact `viewBox`, `width`, and `height`, and its child `image` repeats the same dimensions and local image reference. The page viewport is written as the same width and height. No `aspect-ratio`, `object-fit`, `width:100%`, or `height:auto` rule is required for manga pages.
+Novel inline images retain the optimized pixel dimensions as inline `width`, `height`, and fixed-pixel `style` values. Manga page XHTML follows the older epub-gen approach: the page contains an SVG with an exact `viewBox`, while its child `image` carries the verified dimensions and local image reference. The page viewport is written as the same width and height. Manga OPF metadata declares `pre-paginated` layout and `spread-none` spine items so Kobo scales each page uniformly: portrait pages maximize height and landscape pages maximize width. No `aspect-ratio`, `object-fit`, `width:100%`, or `height:auto` rule is required for manga pages.
 
 ## Compatibility
 

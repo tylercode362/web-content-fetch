@@ -118,7 +118,8 @@ async function writeMangaChapterEpub({ outputDir, title, chapterTitle, chapterIn
     outputDir,
     filename,
     title: `${bookTitle} - ${cleanChapterTitle}`,
-    entries
+    entries,
+    fixedLayout: true
   });
   const kepubPath = await convertToKepub(epubPath);
   return {
@@ -197,7 +198,7 @@ async function optimizeImage(asset, index) {
   }
 }
 
-async function writeEpub({ outputDir, filename, title, entries, images = [] }) {
+async function writeEpub({ outputDir, filename, title, entries, images = [], fixedLayout = false }) {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
   zip.file('META-INF/container.xml', '<?xml version="1.0" encoding="UTF-8"?>' +
@@ -224,14 +225,14 @@ async function writeEpub({ outputDir, filename, title, entries, images = [] }) {
       zip.file(`OEBPS/${href}`, renderNovelXhtml(entry));
     }
     manifest.push(`<item id="${entry.id}" href="${href}" media-type="application/xhtml+xml"/>`);
-    spine.push(`<itemref idref="${entry.id}"/>`);
+    spine.push(`<itemref idref="${entry.id}"${fixedLayout ? ' properties="rendition:spread-none"' : ''}/>`);
     nav.push(`<li><a href="${href}">${label}</a></li>`);
   }
   const navXhtml = renderNavXhtml(title, nav.join(''));
   zip.file('OEBPS/nav.xhtml', navXhtml);
   manifest.push('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>');
   const bookId = `urn:uuid:${crypto.randomUUID()}`;
-  zip.file('OEBPS/content.opf', renderOpf({ title, bookId, manifest: manifest.join(''), spine: spine.join('') }));
+  zip.file('OEBPS/content.opf', renderOpf({ title, bookId, manifest: manifest.join(''), spine: spine.join(''), fixedLayout }));
 
   const output = await zip.generateAsync({
     type: 'nodebuffer',
@@ -315,15 +316,18 @@ function renderInlineImage(image, imageHref, margin) {
 function renderKoboSvg(image, imageHref) {
   const width = Number(image.width);
   const height = Number(image.height);
-  return `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" preserveAspectRatio="xMidYMid meet" style="display:block;margin:0 auto;"><image x="0" y="0" width="${width}" height="${height}" xlink:href="${imageHref}"/></svg>`;
+  return `<svg class="full" xmlns="http://www.w3.org/2000/svg" xmlns:ev="http://www.w3.org/2001/xml-events" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" baseProfile="full" viewBox="0 0 ${width} ${height}"><image height="${height}" width="${width}" x="0" xlink:href="${imageHref}" y="0"/></svg>`;
 }
 
 function renderNavXhtml(title, items) {
   return `<?xml version="1.0" encoding="UTF-8"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="zh-Hant" lang="zh-Hant"><head><title>${escapeXml(title)}</title></head><body><nav epub:type="toc" id="toc"><h1>${escapeXml(title)}</h1><ol>${items}</ol></nav></body></html>`;
 }
 
-function renderOpf({ title, bookId, manifest, spine }) {
-  return `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${escapeXml(bookId)}</dc:identifier><dc:title>${escapeXml(title)}</dc:title><dc:language>zh-Hant</dc:language><meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')}</meta></metadata><manifest>${manifest}</manifest><spine>${spine}</spine></package>`;
+function renderOpf({ title, bookId, manifest, spine, fixedLayout = false }) {
+  const layout = fixedLayout
+    ? '<meta property="rendition:layout">pre-paginated</meta><meta property="rendition:spread">none</meta>'
+    : '';
+  return `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">${escapeXml(bookId)}</dc:identifier><dc:title>${escapeXml(title)}</dc:title><dc:language>zh-Hant</dc:language><meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')}</meta>${layout}</metadata><manifest>${manifest}</manifest><spine>${spine}</spine></package>`;
 }
 
 function escapeXml(value) {

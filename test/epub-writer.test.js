@@ -165,14 +165,18 @@ test('manga output optimizes images and writes Kobo inline dimensions in order',
     ]
   });
   const epub = await readZip(result.epubPath);
+  const opf = await epub.file('OEBPS/content.opf').async('text');
   const first = await epub.file('OEBPS/text/page-0001.xhtml').async('text');
   const second = await epub.file('OEBPS/text/page-0002.xhtml').async('text');
   const third = await epub.file('OEBPS/text/page-0003.xhtml').async('text');
-  assert.match(first, /width="1404" height="1872"/);
-  assert.match(second, /width="900" height="1200"/);
-  assert.match(third, /width="1404" height="585"/);
-  assert.match(first, /<svg[^>]+viewBox="0 0 1404 1872"[^>]+width="1404" height="1872"/);
-  assert.match(first, /<image x="0" y="0" width="1404" height="1872" xlink:href="\.\.\/images\/image-0001\.jpg"/);
+  assert.match(first, /height="1872" width="1404"/);
+  assert.match(second, /height="1200" width="900"/);
+  assert.match(third, /height="585" width="1404"/);
+  assert.match(opf, /<meta property="rendition:layout">pre-paginated<\/meta>/);
+  assert.match(opf, /<meta property="rendition:spread">none<\/meta>/);
+  assert.match(opf, /<itemref idref="page-0001" properties="rendition:spread-none"\/>/);
+  assert.match(first, /<svg[^>]+viewBox="0 0 1404 1872"[^>]*><image height="1872" width="1404" x="0" xlink:href="\.\.\/images\/image-0001\.jpg" y="0"\/>/);
+  assert.doesNotMatch(first, /<svg[^>]+(?:width=|height=|preserveAspectRatio=|style=)/);
   assert.match(third, /viewBox="0 0 1404 585"/);
   assert.doesNotMatch(third, /aspect-ratio|object-fit|width:100%|height:auto/);
   assert.match(first, /<meta name="viewport" content="width=1404, height=1872"/);
