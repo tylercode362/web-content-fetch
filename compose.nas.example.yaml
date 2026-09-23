@@ -1,0 +1,16 @@
+services:
+  web-content-fetch:
+    networks:
+      - default
+      - chrome_bridge_proxy
+      - web_content_fetch_proxy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+networks:
+  chrome_bridge_proxy:
+    external: true
+    name: local-gateway-chrome-bridge
+  web_content_fetch_proxy:
+    external: true
+    name: local-gateway-web-content-fetch

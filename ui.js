@@ -404,11 +404,13 @@
 
   document.querySelector('#saveConfig').onclick = async () => {
     try {
-      await responsePayload(await post('/api/config', {
+      const payload = await responsePayload(await post('/api/config', {
         bridgeUrl: document.querySelector('#bridgeUrl').value,
         callbackUrl: document.querySelector('#callbackUrl').value
       }));
-      setFeedback('#configStatus', '設定已儲存');
+      setFeedback('#configStatus', payload.rebindRequired
+        ? 'Bridge URL 已變更，請重新輸入六碼配對碼'
+        : '設定已儲存');
       await refresh();
     } catch (error) {
       setFeedback('#configStatus', error.message, true);

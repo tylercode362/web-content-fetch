@@ -62,6 +62,9 @@ test('queue source contains expandable jobs and structured download rendering', 
   assert.match(source, /clear-terminal/);
   assert.match(source, /isClearable/);
   assert.match(source, /bridgeProgress/);
+  assert.match(source, /const bridgeChanged = Boolean\(binding && binding\.bridgeUrl !== nextBridgeUrl\)/);
+  assert.match(source, /binding\.serviceCredential = ''/);
+  assert.match(source, /rebindRequired: bridgeChanged/);
   assert.doesNotMatch(source, /update\(job, \{ progress \}\)/);
   assert.match(orchestratorSource, /bridgeProgress: null/);
   assert.match(orchestratorSource, /image: imageIndex/);
@@ -92,6 +95,7 @@ test('queue UI uses one binding, has CSRF recovery, and reports terminal cleanup
   assert.match(uiSource, /credentials: 'same-origin'/);
   assert.match(uiSource, /csrf_forbidden/);
   assert.match(uiSource, /renewCsrf/);
+  assert.match(uiSource, /payload\.rebindRequired/);
   assert.match(cssSource, /form #url{min-width:0/);
   assert.match(cssSource, /\.job-grid\{display:flex;flex-direction:column/);
   assert.match(cssSource, /\.outputs\{order:2;width:100%;border:0;border-top:1px solid/);
@@ -105,6 +109,36 @@ test('reusable deployment script is confirmation-gated and health-checked', asyn
   assert.match(source, /8092\/healthz/);
   assert.doesNotMatch(source, /docker\s+system\s+prune/);
   assert.doesNotMatch(source, /volume\s+rm/);
+});
+
+test('NAS deployment uses fixed networks and explicit config initialization', async () => {
+  const source = await fs.readFile(path.join(__dirname, '..', 'scripts', 'Deploy-Nas.ps1'), 'utf8');
+  const remoteSource = await fs.readFile(path.join(__dirname, '..', 'scripts', 'Deploy-Nas-remote.sh'), 'utf8');
+  const overlay = await fs.readFile(path.join(__dirname, '..', 'compose.nas.example.yaml'), 'utf8');
+  assert.match(source, /ConfirmDeploy/);
+  assert.match(source, /--exclude=\.env/);
+  assert.match(source, /--exclude=\.pnpm-store/);
+  assert.match(source, /--exclude=secrets/);
+  assert.match(source, /--exclude=exports/);
+  assert.match(source, /Deploy-Nas-remote\.sh/);
+  assert.match(source, /InitializeRemoteConfig/);
+  assert.match(source, /remoteStage.*\.env/);
+  assert.match(source, /WEB_CONTENT_FETCH_BRIDGE_URL.*http:\/\/nas-bridge:8788/);
+  assert.match(source, /WEB_CONTENT_FETCH_CALLBACK_URL.*web-content-fetch:8092/);
+  assert.match(source, /WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS.*host\.docker\.internal,web-content-fetch/);
+  assert.match(source, /WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS.*NasHost.*8088/);
+  assert.match(source, /不修改本機 \.env/);
+  assert.match(remoteSource, /incoming_config="\$\{10\}"/);
+  assert.match(remoteSource, /health_timeout="\$\{11\}"/);
+  assert.match(remoteSource, /keep_staging="\$\{12\}"/);
+  assert.match(remoteSource, /WEB_CONTENT_FETCH_CALLBACK_URL.*web-content-fetch:8092/);
+  assert.match(remoteSource, /WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS.*nas_host.*8088/);
+  assert.match(remoteSource, /first deployment requires -InitializeRemoteConfig/);
+  assert.match(remoteSource, /\/usr\/local\/bin\/docker/);
+  assert.match(remoteSource, /\/usr\/local\/bin\/docker-compose/);
+  assert.match(overlay, /local-gateway-chrome-bridge/);
+  assert.match(overlay, /local-gateway-web-content-fetch/);
+  assert.match(overlay, /host\.docker\.internal:host-gateway/);
 });
 
 test('package and lockfile versions stay synchronized', async () => {

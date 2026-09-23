@@ -9,6 +9,7 @@ const { normalizeBaseUrl } = require('./bridge-client');
 const { applyBindingToJob, getBinding, normalizeConfig } = require('./binding-store');
 const { publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('./job-view');
 const { createCsrfStore } = require('./csrf');
+const { validateCallbackUrl } = require('./callback-url');
 
 const host = process.env.WEB_CONTENT_FETCH_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.WEB_CONTENT_FETCH_PORT || 8092);
@@ -309,10 +310,17 @@ const server = http.createServer(async (request, response) => {
       if (body.activeBindingId && !getBinding(config, String(body.activeBindingId))) {
         throw new Error('binding_not_found');
       }
-      config.defaultBridgeUrl = nextBridgeUrl;
       const binding = getBinding(config, body.activeBindingId ? String(body.activeBindingId) : '');
+      const bridgeChanged = Boolean(binding && binding.bridgeUrl !== nextBridgeUrl);
+      config.defaultBridgeUrl = nextBridgeUrl;
       if (binding) {
+        if (bridgeChanged) {
+          binding.serviceCredential = '';
+          binding.browserClientId = '';
+          binding.expectedFingerprint = '';
+        }
         binding.bridgeUrl = nextBridgeUrl;
+        binding.updatedAt = new Date().toISOString();
         config.activeBindingId = binding.bindingId;
       } else {
         config.activeBindingId = null;
@@ -320,7 +328,7 @@ const server = http.createServer(async (request, response) => {
       config.callbackUrl = nextCallbackUrl;
       orchestrator.reconfigure(config);
       await saveConfig(config);
-      return sendJson(response, 200, { binding: publicBinding(config) });
+      return sendJson(response, 200, { binding: publicBinding(config), rebindRequired: bridgeChanged });
     } catch (error) {
       return sendJson(response, 422, { error: safeDiagnostic(error) });
     }
@@ -482,22 +490,6 @@ function serveStatic(response, filename, contentType) {
   const filePath = path.join(__dirname, filename);
   response.writeHead(200, { 'Content-Type': contentType, 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   return fs.createReadStream(filePath).on('error', () => response.destroy()).pipe(response);
-}
-
-function validateCallbackUrl(value) {
-  const parsed = new URL(value);
-  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.hash || parsed.search || parsed.pathname !== '/api/bridge/callback') throw new Error('callback_url_invalid');
-  if (isLoopbackHostname(parsed.hostname)) throw new Error('callback_url_must_be_reachable_from_bridge');
-  const allowedHosts = String(process.env.WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS || 'host.docker.internal')
-    .split(',').map(item => item.trim().toLowerCase()).filter(Boolean);
-  const host = parsed.hostname.toLowerCase();
-  if (!allowedHosts.some(allowed => host === allowed || host.endsWith(`.${allowed}`))) throw new Error('callback_url_host_forbidden');
-  return parsed.href;
-}
-
-function isLoopbackHostname(hostname) {
-  const value = String(hostname).toLowerCase();
-  return value === 'localhost' || value === 'ip6-localhost' || value === '0.0.0.0' || value === '::1' || value === '127.0.0.1' || value.startsWith('127.');
 }
 
 function isUuid(value) {
