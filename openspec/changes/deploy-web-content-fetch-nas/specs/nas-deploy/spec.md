@@ -12,15 +12,14 @@ use the WCF service name on that shared network.
 - THEN the WCF container can resolve and connect to nas-bridge:8788
 - AND the Chrome Bridge container can resolve web-content-fetch:8092
 
-### Requirement: Accept the Gateway callback URL
-WCF SHALL accept the exact Gateway-prefixed callback path and normalize it to
-the configured in-network callback endpoint before saving or sending it to
-Chrome Bridge.
+### Requirement: Select the NAS callback URL automatically
+WCF SHALL use the in-network callback endpoint when sending a content request
+to Chrome Bridge, without requesting or displaying a callback URL in the UI.
 
-#### Scenario: Save the NAS Gateway callback URL
-- WHEN the operator saves http://<allowed-gateway-host>:8088/web-content-fetch/api/bridge/callback
-- THEN WCF stores and sends http://web-content-fetch:8092/api/bridge/callback
-- AND arbitrary callback paths or unconfigured gateway hosts are rejected
+#### Scenario: Open the NAS Gateway page
+- WHEN the operator opens the Gateway page and saves the Bridge URL
+- THEN WCF sends http://web-content-fetch:8092/api/bridge/callback to Bridge
+- AND no callback URL is requested or displayed in the UI
 
 ### Requirement: Preserve private deployment data
 The deployment script SHALL exclude .env, secrets, exports, EPUB files and Git

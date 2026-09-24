@@ -12,7 +12,7 @@ function normalizeConfig(raw = {}, env = process.env) {
   const defaultBridgeUrl = normalizeBaseUrl(
     source.defaultBridgeUrl || source.bridgeUrl || env.WEB_CONTENT_FETCH_BRIDGE_URL || 'http://host.docker.internal:8788'
   );
-  const callbackUrl = source.callbackUrl || env.WEB_CONTENT_FETCH_CALLBACK_URL;
+  const callbackUrl = env.WEB_CONTENT_FETCH_CALLBACK_URL || source.callbackUrl;
   const validBindings = [];
   const seen = new Set();
   const inputBindings = Array.isArray(source.bindings) ? source.bindings : [];
@@ -96,7 +96,6 @@ function publicBinding(config) {
   const active = getBinding(config);
   return {
     bridgeUrl: active?.bridgeUrl || config.defaultBridgeUrl,
-    callbackUrl: config.callbackUrl,
     activeBindingId: config.activeBindingId,
     serviceClientId: active?.serviceClientId || null,
     browserClientId: active?.browserClientId || null,

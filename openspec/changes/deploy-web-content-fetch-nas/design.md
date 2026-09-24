@@ -5,9 +5,9 @@ WCF NAS overlay 加入兩個固定 external network：
 - local-gateway-chrome-bridge：連到 nas-bridge:8788。
 - local-gateway-web-content-fetch：讓 Local Gateway 代理 web-content-fetch:8092。
 
-Bridge 與 WCF 共用 `local-gateway-chrome-bridge`。使用者可在 UI 填入
-Gateway 公開的 `/web-content-fetch/api/bridge/callback`；WCF 只接受此固定
-路徑與部署時設定的 Gateway host，儲存前轉成共用 network 內的
+Bridge 與 WCF 共用 `local-gateway-chrome-bridge`。Callback URL
+由服務依部署設定自動選擇，UI 不提供輸入欄位。傳送任務
+給 Bridge 時使用共用 network 內的
 `http://web-content-fetch:8092/api/bridge/callback`。Chrome Bridge 只允許
 `web-content-fetch` 作為此 callback 的 Docker host。
 

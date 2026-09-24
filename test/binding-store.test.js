@@ -43,3 +43,11 @@ test('unknown binding ids do not silently select the canonical profile', () => {
 
   assert.equal(getBinding(config, '77777777-7777-4777-8777-777777777777'), null);
 });
+
+test('deployment callback overrides an obsolete saved callback', () => {
+  const config = normalizeConfig(
+    { callbackUrl: 'http://host.docker.internal:8092/api/bridge/callback' },
+    { WEB_CONTENT_FETCH_CALLBACK_URL: 'http://web-content-fetch:8092/api/bridge/callback' }
+  );
+  assert.equal(config.callbackUrl, 'http://web-content-fetch:8092/api/bridge/callback');
+});

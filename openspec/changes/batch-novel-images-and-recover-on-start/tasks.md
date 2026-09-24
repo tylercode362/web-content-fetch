@@ -1,0 +1,4 @@
+- [x] RED: Add coverage for batched novel assets and partial batch failures.
+- [x] GREEN: Retrieve Linovel chapter illustrations in the same Bridge tab, stream each bounded image through the authenticated callback, and checkpoint in source order.
+- [x] GREEN: Preserve the explicit paused state on UI refresh and resume interrupted running jobs from durable checkpoints.
+- [x] VERIFY: Run focused Bridge/WCF checks and strict OpenSpec validation.

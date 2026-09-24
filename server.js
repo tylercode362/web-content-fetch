@@ -35,8 +35,7 @@ function loadConfig() {
   }
   const normalized = normalizeConfig(value, {
     ...process.env,
-    WEB_CONTENT_FETCH_CALLBACK_URL: value.callbackUrl ||
-      process.env.WEB_CONTENT_FETCH_CALLBACK_URL ||
+    WEB_CONTENT_FETCH_CALLBACK_URL: process.env.WEB_CONTENT_FETCH_CALLBACK_URL ||
       `http://host.docker.internal:${port}/api/bridge/callback`
   });
   normalized.callbackUrl = validateCallbackUrl(normalized.callbackUrl);
@@ -184,13 +183,13 @@ function sendJson(response, status, value, extra) {
   response.end(JSON.stringify(value));
 }
 
-function readJson(request) {
+function readJson(request, maxBytes = 64 * 1024) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
     request.on('data', chunk => {
       size += chunk.length;
-      if (size > 64 * 1024) reject(new Error('request_too_large'));
+      if (size > maxBytes) reject(new Error('request_too_large'));
       else chunks.push(chunk);
     });
     request.on('end', () => {
@@ -201,52 +200,15 @@ function readJson(request) {
   });
 }
 
-function renderLegacyHtml(token) {
-  return '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">' +
-    '<meta name="viewport" content="width=device-width,initial-scale=1">' +
-    '<meta name="csrf-token" content="' + escapeHtml(token) + '"><title>Web Content Fetch</title>' +
-    '<style>body{font-family:system-ui,sans-serif;max-width:980px;margin:2rem auto;padding:0 1rem;color:#172033}input,select,button{font:inherit;padding:.55rem}form{display:flex;gap:.5rem;flex-wrap:wrap;margin:.6rem 0 1rem}input{flex:1;min-width:20rem}section{border:1px solid #dce2ec;border-radius:12px;padding:1rem;margin:1rem 0}li{margin:.55rem 0}.job{border:1px solid #dce2ec;border-radius:8px;padding:.65rem .8rem}.job summary{cursor:pointer;font-weight:600}.job-target{overflow-wrap:anywhere}.job-meta{font-size:.9rem;color:#526176}.downloads{border-top:1px solid #e6eaf0;padding-top:.5rem}.downloads ul{margin:.35rem 0}.muted{color:#64748b}.identity{font-size:.85rem;color:#526176}.error{color:#a00}code{overflow-wrap:anywhere}</style></head>' +
-    '<body><h1>內容下載任務</h1>' +
-    '<section><h2>Bridge 設定</h2><label>Bridge Server URL <input id="bridgeUrl" type="url" size="42"></label>' +
-    '<label>Bridge callback URL <input id="callbackUrl" type="url" size="52"></label>' +
-    '<label>目前 binding <select id="bindingSelect"></select></label>' +
-    '<button id="saveConfig">儲存設定</button><p id="binding" class="muted"></p>' +
-    '<p class="muted">本瀏覽器的 service UUID 會隨機產生並固定保存；輸入六碼會建立新的 browser/service binding，既有 binding 不會被撤銷。</p><p id="browserServiceId" class="muted"></p>' +
-    '<label>六碼綁定碼 <input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair">新增 Bridge 綁定</button><p id="configStatus"></p></section>' +
-    '<section><h2>新增任務</h2><form id="form"><input id="url" type="url" placeholder="小說或漫畫作品網址" required>' +
-    '<select id="kind"><option value="auto">自動判斷</option><option value="novel">小說</option><option value="manga">漫畫</option></select>' +
-    '<select id="jobBinding" required></select><button>加入佇列</button></form><p id="status"></p></section><section><h2>佇列</h2><ul id="jobs"></ul></section><script>' +
-    'const token=document.querySelector("[name=csrf-token]").content;' +
-    'const makeUuid=()=>{if(crypto.randomUUID)return crypto.randomUUID();const bytes=new Uint8Array(16);if(crypto.getRandomValues)crypto.getRandomValues(bytes);else for(let i=0;i<bytes.length;i+=1)bytes[i]=Math.floor(Math.random()*256);bytes[6]=(bytes[6]&15)|64;bytes[8]=(bytes[8]&63)|128;const hex=[...bytes].map(value=>value.toString(16).padStart(2,"0")).join("");return hex.slice(0,8)+"-"+hex.slice(8,12)+"-"+hex.slice(12,16)+"-"+hex.slice(16,20)+"-"+hex.slice(20);};' +
-    'const browserServiceId=(()=>{const key="web-content-fetch.serviceClientId";let value=localStorage.getItem(key);if(!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value||"")){value=makeUuid();localStorage.setItem(key,value);}return value;})();' +
-    'document.querySelector("#browserServiceId").textContent="本瀏覽器 service UUID："+browserServiceId;' +
-    'const esc=value=>{const node=document.createElement("span");node.textContent=String(value??"");return node.innerHTML;};' +
-    'const profileLabel=p=>p.serviceClientId+"｜browser "+p.browserClientId+"｜"+p.bridgeUrl;' +
-    'const fillSelect=(id,profiles,selected)=>{const node=document.querySelector(id);node.textContent="";for(const p of profiles){const option=document.createElement("option");option.value=p.bindingId;option.textContent=profileLabel(p);node.append(option);}if(!profiles.length){const option=document.createElement("option");option.value="";option.textContent="尚未綁定";node.append(option);}node.value=selected||"";};' +
-    'const renderBinding=b=>{const profiles=b.bindings||[];fillSelect("#bindingSelect",profiles,b.activeBindingId);fillSelect("#jobBinding",profiles,b.activeBindingId);document.querySelector("#binding").textContent=(b.paired?"已綁定：":"尚未綁定：")+(b.bridgeUrl||"")+"｜callback "+(b.callbackUrl||"")+"｜browser "+(b.browserClientId||"-")+"｜service "+(b.serviceClientId||"-");};' +
-    'const safeHttpUrl=value=>{try{const url=new URL(String(value||""));return ["http:","https:"].includes(url.protocol)?url.href:"";}catch{return"";}};' +
-    'const renderJobs=jobs=>{const list=document.querySelector("#jobs");list.textContent="";for(const job of jobs){const item=document.createElement("li");const details=document.createElement("details");details.className="job";const summary=document.createElement("summary");summary.textContent=(job.status||"-")+" · "+(job.kind||"-")+" · "+(job.title||job.url||"未命名工作");details.append(summary);const target=document.createElement("p");target.className="job-target";target.append(document.createTextNode("目標網址："));const targetUrl=safeHttpUrl(job.url);if(targetUrl){const link=document.createElement("a");link.href=targetUrl;link.target="_blank";link.rel="noopener noreferrer";link.textContent=String(job.url);target.append(link);}else target.append(document.createTextNode(String(job.url||"-")));details.append(target);const meta=document.createElement("p");meta.className="job-meta";meta.textContent="進度："+JSON.stringify(job.progress||{})+"｜章節："+(job.chapterCount||"-");details.append(meta);const identity=document.createElement("p");identity.className="identity";identity.textContent="binding "+(job.bindingId||"-")+"｜browser "+(job.browserClientId||"-")+"｜service "+(job.serviceClientId||"-")+"｜Bridge "+(job.bridgeUrl||"-");details.append(identity);if(job.diagnostic){const diagnostic=document.createElement("p");diagnostic.className="error";diagnostic.textContent="診斷："+job.diagnostic;details.append(diagnostic);}const downloads=document.createElement("div");downloads.className="downloads";const heading=document.createElement("strong");heading.textContent="下載檔案";downloads.append(heading);const downloadList=document.createElement("ul");for(const download of Array.isArray(job.downloads)?job.downloads:[]){if(!download||!download.href)continue;const row=document.createElement("li");const link=document.createElement("a");link.href=download.href;link.download=download.filename||"";link.textContent=(download.format||"檔案")+"："+(download.filename||download.href);row.append(link);downloadList.append(row);}if(downloadList.children.length)downloads.append(downloadList);else{const empty=document.createElement("span");empty.className="muted";empty.textContent=" 尚未產生可下載的 EPUB／KEPUB。";downloads.append(empty);}details.append(downloads);const actions=document.createElement("p");const addAction=(action,label)=>{const button=document.createElement("button");button.dataset.jobId=job.id;button.dataset.action=action;button.textContent=label;actions.append(button);};if(["queued","running"].includes(job.status))addAction("pause","暫停");if(job.status==="paused")addAction("resume","恢復");if(["queued","running","pausing","paused","cancelling"].includes(job.status))addAction("cancel","取消並刪除");if(["complete","error","cancelled"].includes(job.status))addAction("delete","刪除記錄與輸出");if(actions.children.length)details.append(actions);item.append(details);list.append(item);}};' +
-    'const renderJobsWithRecovery=jobs=>{renderJobs(jobs);const resumable=["browser_client_disconnected","browser_client_offline","browser_command_timeout","browser_navigation_timeout","bridge_transport_failed","secure_transport_failed"];[...document.querySelector("#jobs").children].forEach((item,index)=>{const job=jobs[index];if(job?.status!=="error"||!resumable.includes(job.diagnostic))return;const details=item.querySelector("details");if(!details)return;const actions=document.createElement("p");const button=document.createElement("button");button.dataset.jobId=job.id;button.dataset.action="resume";button.textContent="恢復";actions.append(button);details.append(actions);});};' +
-    'const render=data=>{renderBinding(data.binding||{});renderJobsWithRecovery(data.jobs||[]);};' +
-    'async function refresh(){const r=await fetch("/api/state");if(!r.ok)throw new Error("state_http_"+r.status);const data=await r.json();const binding=data.binding||{};document.querySelector("#bridgeUrl").value=binding.bridgeUrl||"";document.querySelector("#callbackUrl").value=binding.callbackUrl||"";render({...data,binding});}' +
-    'async function post(path,body){return fetch(path,{method:"POST",headers:{"content-type":"application/json","x-csrf-token":token},body:JSON.stringify(body)});}' +
-    'document.querySelector("#saveConfig").onclick=async()=>{const r=await post("/api/config",{bridgeUrl:document.querySelector("#bridgeUrl").value,callbackUrl:document.querySelector("#callbackUrl").value,activeBindingId:document.querySelector("#bindingSelect").value});document.querySelector("#configStatus").textContent=r.ok?"設定已儲存":"設定失敗";await refresh();};' +
-    'document.querySelector("#pair").onclick=async()=>{const r=await post("/api/bridge/pair",{code:document.querySelector("#pairCode").value,bridgeUrl:document.querySelector("#bridgeUrl").value,serviceClientId:browserServiceId});document.querySelector("#configStatus").textContent=r.ok?"Bridge 綁定成功":"Bridge 綁定失敗";await refresh();};' +
-    'document.querySelector("#form").addEventListener("submit",async e=>{e.preventDefault();const r=await post("/api/jobs",{url:document.querySelector("#url").value,kind:document.querySelector("#kind").value,bindingId:document.querySelector("#jobBinding").value});document.querySelector("#status").textContent=r.ok?"已加入佇列":"加入失敗";await refresh();});' +
-    'document.querySelector("#jobs").addEventListener("click",async e=>{const id=e.target.dataset.jobId;const action=e.target.dataset.action;if(!id||!action)return;if(action==="cancel"&&!confirm("取消後會刪除這個工作已下載的暫存檔，確定繼續嗎？"))return;if(action==="delete"&&!confirm("這會刪除工作記錄、已產生的 EPUB 與暫存檔，確定繼續嗎？"))return;await post("/api/jobs/"+encodeURIComponent(id)+"/"+action,{});await refresh();});' +
-    'const events=new EventSource("/api/events");events.onmessage=e=>{const data=JSON.parse(e.data);render(data);};refresh();' +
-    '</script></body></html>';
-}
-
 function renderHtml(token) {
   return '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">' +
     '<meta name="viewport" content="width=device-width,initial-scale=1">' +
     '<meta name="csrf-token" content="' + escapeHtml(token) + '"><title>Web Content Fetch</title>' +
     '<link rel="stylesheet" href="ui.css"></head><body>' +
     '<main class="shell"><header class="hero"><div><p class="eyebrow">LOCAL CONTENT WORKSPACE</p><h1>內容下載任務</h1><p class="lede">小說整部輸出；漫畫逐章／逐卷完成就能下載。</p></div><div id="connection" class="connection" data-state="unknown">檢查 Bridge 中…</div></header>' +
-    '<section class="panel settings"><div class="section-heading"><div><p class="eyebrow">CONNECTION</p><h2>Bridge 設定</h2></div><span class="section-note">配對碼只用於建立 binding</span></div>' +
-    '<div class="settings-grid"><label>Bridge Server URL<input id="bridgeUrl" type="url"></label><label>Callback URL<input id="callbackUrl" type="url"></label></div>' +
-    '<div class="settings-actions"><div class="binding-summary"><span>目前唯一 Bridge binding</span><strong id="bindingId">尚未綁定</strong></div><button id="saveConfig" class="button secondary">儲存設定</button><label>六碼綁定碼<input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair" class="button secondary">重新綁定 Bridge</button></div><p id="binding" class="hint"></p><p id="browserServiceId" class="hint"></p><p id="configStatus" class="feedback"></p></section>' +
+    '<section class="panel settings"><div class="section-heading"><div><p class="eyebrow">連線設定</p><h2>Chrome Bridge 設定</h2></div><span class="section-note">六碼僅供建立授權</span></div>' +
+    '<div class="settings-grid"><label>Chrome Bridge 網址<input id="bridgeUrl" type="url"></label></div>' +
+    '<div class="settings-actions"><div class="binding-summary"><span>目前授權狀態</span><strong id="bindingId">尚未設定</strong></div><button id="saveConfig" class="button secondary">儲存網址</button><label>Extension 顯示的六碼<input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair" class="button secondary">改綁產生六碼的 Extension</button></div><p id="boundExtensionId" class="hint"></p><p id="binding" class="hint"></p><p id="bridgeHeartbeat" class="hint"></p><p id="browserServiceId" class="hint"></p><p id="configStatus" class="feedback"></p></section>' +
     '<section class="panel add-job"><div class="section-heading"><div><p class="eyebrow">QUEUE</p><h2>新增下載任務</h2></div><span class="section-note">同一 FQDN 會依序處理</span></div><form id="form"><input id="url" type="url" placeholder="貼上小說或漫畫作品網址" required><select id="kind"><option value="auto">自動判斷</option><option value="novel">小說</option><option value="manga">漫畫</option></select><button class="button primary">加入佇列</button></form><p id="status" class="feedback"></p></section>' +
     '<section class="queue-header"><div><p class="eyebrow">DOWNLOAD QUEUE</p><h2>工作佇列</h2></div><div class="queue-tools"><div id="stats" class="stats"></div><button id="clearFailed" class="button ghost">清除失敗與取消紀錄</button></div></section><section id="jobs" class="jobs" aria-live="polite"></section></main><script src="ui.js"></script></body></html>';
 }
@@ -272,9 +234,38 @@ const server = http.createServer(async (request, response) => {
 
   if (request.method === 'POST' && url.pathname === '/api/bridge/callback') {
     let body;
-    try { body = await readJson(request); } catch { return sendJson(response, 400, { error: 'invalid_json' }); }
+    const callbackType = String(request.headers['x-bridge-callback-type'] || '');
+    const callbackJobId = String(request.headers['x-bridge-callback-job-id'] || '');
+    const maxCallbackBytes = callbackType === 'novel_asset' ? 24 * 1024 * 1024
+      : callbackType === 'novel_images' ? 2 * 1024 * 1024 : 64 * 1024;
+    if (callbackType === 'novel_asset' || callbackType === 'novel_images') {
+      const callbackJob = jobs.get(callbackJobId);
+      if (!callbackAllowed(request, callbackJob)) return sendJson(response, 403, { error: 'callback_forbidden' });
+      const contentLength = Number(request.headers['content-length'] || 0);
+      if (contentLength > maxCallbackBytes) return sendJson(response, 413, { error: 'request_too_large' });
+    }
+    try { body = await readJson(request, maxCallbackBytes); } catch { return sendJson(response, 400, { error: 'invalid_json' }); }
+    if ((callbackType === 'novel_asset' || callbackType === 'novel_images') && body.jobId !== callbackJobId) {
+      return sendJson(response, 403, { error: 'callback_forbidden' });
+    }
     const job = typeof body.jobId === 'string' ? jobs.get(body.jobId) : null;
     if (!callbackAllowed(request, job)) return sendJson(response, 403, { error: 'callback_forbidden' });
+    if (body.type === 'novel_images' && callbackType === 'novel_images') {
+      try {
+        const result = await orchestrator.registerNovelImagesCallback(body.jobId, body);
+        return sendJson(response, 202, result);
+      } catch (error) {
+        return sendJson(response, 409, { error: safeDiagnostic(error) });
+      }
+    }
+    if (body.type === 'novel_asset' && callbackType === 'novel_asset') {
+      try {
+        const result = await orchestrator.acceptNovelAssetCallback(body.jobId, body);
+        return sendJson(response, 202, result);
+      } catch (error) {
+        return sendJson(response, 409, { error: safeDiagnostic(error) });
+      }
+    }
     if ((job.status === 'queued' || job.status === 'running') && body.progress && typeof body.progress === 'object') {
       const progress = {
         phase: String(body.progress.phase || 'bridge_callback').slice(0, 64),
@@ -291,6 +282,9 @@ const server = http.createServer(async (request, response) => {
     const token = csrfStore.issue();
     return sendJson(response, 200, { csrfToken: token }, { 'Set-Cookie': csrfStore.cookieHeader(token) });
   }
+  if (request.method === 'GET' && url.pathname === '/api/bridge/status') {
+    return sendJson(response, 200, await orchestrator.bindingStatus());
+  }
   if (request.method === 'GET' && (url.pathname === '/api/state' || url.pathname === '/api/jobs')) {
     return sendJson(response, 200, { jobs: [...jobs.values()].map(publicJob), binding: publicBinding(config) });
   }
@@ -306,7 +300,10 @@ const server = http.createServer(async (request, response) => {
     try {
       const body = await readJson(request);
       const nextBridgeUrl = normalizeBaseUrl(String(body.bridgeUrl || ''));
-      const nextCallbackUrl = validateCallbackUrl(String(body.callbackUrl || ''));
+      if (Object.hasOwn(body, 'callbackUrl') &&
+          validateCallbackUrl(String(body.callbackUrl || '')) !== config.callbackUrl) {
+        throw new Error('callback_url_managed_by_deployment');
+      }
       if (body.activeBindingId && !getBinding(config, String(body.activeBindingId))) {
         throw new Error('binding_not_found');
       }
@@ -325,7 +322,6 @@ const server = http.createServer(async (request, response) => {
       } else {
         config.activeBindingId = null;
       }
-      config.callbackUrl = nextCallbackUrl;
       orchestrator.reconfigure(config);
       await saveConfig(config);
       return sendJson(response, 200, { binding: publicBinding(config), rebindRequired: bridgeChanged });

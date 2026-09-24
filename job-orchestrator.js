@@ -3,13 +3,15 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { BridgeClient, normalizeBaseUrl } = require('./bridge-client');
-const { getBinding, isUuid, publicBinding } = require('./binding-store');
+const { resolveCallbackUrl } = require('./callback-url');
+const { applyBindingToJob, getBinding, isUuid, publicBinding } = require('./binding-store');
 const { cleanBookTitle, writeMangaChapterEpub, writeNovelEpub } = require('./epub-writer');
 
 const MAX_CHAPTERS = 2000;
 const MAX_PAGES = 512;
 const MAX_IMAGES = 1024;
 const MANGA_ASSET_BATCH_SIZE = 8;
+const NOVEL_ASSET_BATCH_SIZE = 16;
 const MAX_RETRIES = 2;
 const DEFAULT_MAX_CONCURRENT_JOBS = 5;
 const MAX_CONCURRENT_JOBS = 5;
@@ -32,6 +34,7 @@ class DownloadOrchestrator {
     this.runningFqdns = new Set();
     this.controllers = new Map();
     this.clients = new Map();
+    this.pendingNovelAssets = new Map();
     this.outputPublishTail = Promise.resolve();
     this.refreshClients();
   }
@@ -55,6 +58,112 @@ class DownloadOrchestrator {
     this.refreshClients();
   }
 
+  async registerNovelImagesCallback(jobId, payload) {
+    const job = this.jobs.get(jobId);
+    const context = this.pendingNovelAssets.get(jobId);
+    if (!job || job.status !== 'running' || !context || payload.runId !== context.runId ||
+        payload.chapterIndex !== context.chapterIndex || !Array.isArray(payload.images) ||
+        payload.images.length > MAX_IMAGES) {
+      throw new Error('novel_image_callback_stale');
+    }
+    const chapterUrl = new URL(context.chapterUrl);
+    const evidence = payload.images.map(item => {
+      if (!item || typeof item.url !== 'string') throw new Error('novel_image_callback_invalid');
+      const url = new URL(item.url);
+      const pageUrl = new URL(String(item.pageUrl || context.chapterUrl));
+      const width = Number(item.width);
+      const height = Number(item.height);
+      if (!['http:', 'https:'].includes(url.protocol) ||
+          !['http:', 'https:'].includes(pageUrl.protocol) || pageUrl.origin !== chapterUrl.origin ||
+          !Number.isInteger(width) || width < 1 || width > 100_000 ||
+          !Number.isInteger(height) || height < 1 || height > 100_000) {
+        throw new Error('novel_image_callback_invalid');
+      }
+      return {
+        url: url.href,
+        pageUrl: pageUrl.href,
+        width,
+        height,
+        alt: typeof item.alt === 'string' ? item.alt.slice(0, 500) : ''
+      };
+    });
+    if (new Set(evidence.map(item => item.url)).size !== evidence.length) {
+      throw new Error('novel_image_callback_duplicate');
+    }
+    const assets = await this.reusableImageAssets(job, context.chapterIndex, 'novel', context.chapterUrl, evidence);
+    context.evidence = evidence;
+    context.assets = assets;
+    this.update(job, {
+      progress: {
+        phase: 'fetching_images',
+        completed: context.chapterIndex,
+        total: Number.isInteger(job.progress?.total) ? job.progress.total : null,
+        chapter: context.chapterIndex + 1,
+        chapterTotal: Number.isInteger(job.progress?.total) ? job.progress.total : null,
+        image: assets.length,
+        imageTotal: evidence.length
+      }
+    });
+    return { accepted: true, resumeFromImageIndex: assets.length };
+  }
+
+  async acceptNovelAssetCallback(jobId, payload) {
+    const job = this.jobs.get(jobId);
+    const context = this.pendingNovelAssets.get(jobId);
+    if (!job || job.status !== 'running' || !context || payload.runId !== context.runId ||
+        payload.chapterIndex !== context.chapterIndex || !context.evidence ||
+        !Number.isInteger(payload.imageIndex) || payload.imageIndex < 0 ||
+        payload.imageIndex >= context.evidence.length || typeof payload.sourceUrl !== 'string') {
+      throw new Error('novel_asset_callback_stale');
+    }
+    const expected = context.evidence[payload.imageIndex];
+    if (payload.sourceUrl !== expected.url || !payload.asset || typeof payload.asset !== 'object') {
+      throw new Error('novel_asset_callback_mismatch');
+    }
+    const assetData = payload.asset.data;
+    const mime = String(payload.asset.mime || '').toLowerCase();
+    const suppliedDigest = String(payload.asset.sha256 || '').toLowerCase();
+    if (typeof assetData !== 'string' || assetData.length < 4 || assetData.length > 22_369_624 ||
+        !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(assetData) ||
+        !mime.startsWith('image/') || !/^[a-f0-9]{64}$/.test(suppliedDigest)) {
+      throw new Error('novel_asset_callback_invalid');
+    }
+    const bytes = Buffer.from(assetData, 'base64');
+    const digest = crypto.createHash('sha256').update(bytes).digest('hex');
+    if (bytes.length < 1 || bytes.length > 16 * 1024 * 1024 || bytes.toString('base64') !== assetData || digest !== suppliedDigest) {
+      throw new Error('novel_asset_callback_integrity_failed');
+    }
+    if (payload.imageIndex < context.assets.length) {
+      if (context.assets[payload.imageIndex]?.sha256 === digest) return { accepted: true, duplicate: true };
+      throw new Error('novel_asset_callback_conflict');
+    }
+    if (payload.imageIndex !== context.assets.length) throw new Error('novel_asset_callback_order_invalid');
+    const asset = {
+      data: assetData,
+      mime,
+      sha256: digest,
+      width: expected.width,
+      height: expected.height,
+      sourceUrl: expected.url,
+      alt: expected.alt
+    };
+    const nextAssets = [...context.assets, asset];
+    await this.writeImageCheckpoint(job, context.chapterIndex, 'novel', context.chapterUrl, context.evidence, nextAssets);
+    context.assets = nextAssets;
+    this.update(job, {
+      progress: {
+        phase: 'fetching_images',
+        completed: context.chapterIndex,
+        total: Number.isInteger(job.progress?.total) ? job.progress.total : null,
+        chapter: context.chapterIndex + 1,
+        chapterTotal: Number.isInteger(job.progress?.total) ? job.progress.total : null,
+        image: context.assets.length,
+        imageTotal: context.evidence.length
+      }
+    });
+    return { accepted: true };
+  }
+
   get paired() {
     return (this.config.bindings || []).some(binding =>
       Boolean(binding.serviceCredential && binding.browserClientId)
@@ -63,6 +172,37 @@ class DownloadOrchestrator {
 
   get activeBinding() {
     return getBinding(this.config);
+  }
+
+  async bindingStatus() {
+    const binding = this.activeBinding;
+    const responseFor = (status, details = {}) => ({
+      status,
+      browserClientId: binding?.browserClientId || null,
+      checkedAt: status === 'not_configured' ? null : new Date().toISOString(),
+      lastHeartbeatAt: null,
+      ...details
+    });
+    if (!binding?.serviceCredential || !binding.browserClientId) return responseFor('not_configured');
+    const client = new BridgeClient(binding);
+    try {
+      const response = await client.listBrowserClients({ signal: AbortSignal.timeout(5000) });
+      if (response?.success === false && response.code === 'authentication_failed') {
+        return responseFor('authentication_failed');
+      }
+      if (response?.success !== true || !Array.isArray(response.clients)) return responseFor('unavailable');
+      const browser = response.clients.find(item => item.browserClientId === binding.browserClientId);
+      const timestamp = typeof browser?.lastSeenAt === 'string' && Number.isFinite(Date.parse(browser.lastSeenAt))
+        ? new Date(browser.lastSeenAt).toISOString()
+        : null;
+      return responseFor(browser?.online === true ? 'verified' : 'browser_offline', {
+        lastHeartbeatAt: timestamp
+      });
+    } catch {
+      return responseFor('unavailable');
+    } finally {
+      client.invalidateSession();
+    }
   }
 
   async pair(code, options = {}) {
@@ -100,6 +240,11 @@ class DownloadOrchestrator {
     this.config.activeBindingId = binding.bindingId;
     await this.saveConfig(this.config);
     this.refreshClients();
+    const resumableJobs = [...this.jobs.values()].filter(job =>
+      ['queued', 'paused', 'error'].includes(job.status) && getBinding(this.config, job.bindingId)
+    );
+    for (const job of resumableJobs) applyBindingToJob(job, binding);
+    if (resumableJobs.length) this.update(resumableJobs[0], {});
     return publicBinding(this.config);
   }
 
@@ -192,21 +337,52 @@ class DownloadOrchestrator {
     return value;
   }
 
-  chapterCheckpointName(index) {
-    return `chapters/chapter-${String(index).padStart(6, '0')}.json`;
+  chapterCheckpointName(index, suffix = '') {
+    return `chapters/chapter-${String(index).padStart(6, '0')}${suffix}.json`;
   }
 
-  async writeChapterCheckpoint(job, index, value) {
+  async writeChapterCheckpoint(job, index, value, suffix = '') {
     const directory = path.join(this.checkpointPath(job), 'chapters');
     await fsp.mkdir(directory, { recursive: true, mode: 0o700 });
-    const filePath = path.join(directory, `chapter-${String(index).padStart(6, '0')}.json`);
+    const filePath = path.join(directory, `chapter-${String(index).padStart(6, '0')}${suffix}.json`);
     const temporary = `${filePath}.${crypto.randomUUID()}.tmp`;
     await fsp.writeFile(temporary, JSON.stringify(value) + '\n', { mode: 0o600 });
     await fsp.rename(temporary, filePath);
   }
 
-  async readChapterCheckpoint(job, index) {
-    return this.readCheckpoint(job, this.chapterCheckpointName(index));
+  async readChapterCheckpoint(job, index, suffix = '') {
+    return this.readCheckpoint(job, this.chapterCheckpointName(index, suffix));
+  }
+
+  async writeImageCheckpoint(job, index, kind, chapterUrl, evidence, assets) {
+    const imageIndex = assets.length - 1;
+    if (imageIndex < 0) return;
+    await this.writeChapterCheckpoint(job, index, assets[imageIndex],
+      `-image-${String(imageIndex).padStart(6, '0')}`);
+    await this.writeChapterCheckpoint(job, index, {
+      kind,
+      chapterUrl,
+      imageUrls: evidence.map(image => image.url),
+      assetCount: assets.length
+    }, '-images');
+  }
+
+  async reusableImageAssets(job, index, kind, chapterUrl, evidence) {
+    const saved = await this.readChapterCheckpoint(job, index, '-images');
+    if (!saved || saved.kind !== kind || saved.chapterUrl !== chapterUrl ||
+        !Array.isArray(saved.imageUrls) || saved.imageUrls.length !== evidence.length ||
+        !Number.isInteger(saved.assetCount) || saved.assetCount < 0 ||
+        saved.assetCount > evidence.length ||
+        saved.imageUrls.some((url, position) => url !== evidence[position].url)) return [];
+    const assets = [];
+    for (let position = 0; position < saved.assetCount; position += 1) {
+      const asset = await this.readChapterCheckpoint(job, index,
+        `-image-${String(position).padStart(6, '0')}`);
+      if (asset?.sourceUrl !== evidence[position].url ||
+          typeof asset.data !== 'string' || !asset.data) return [];
+      assets.push(asset);
+    }
+    return assets;
   }
 
   async ensureStage(job) {
@@ -444,9 +620,9 @@ class DownloadOrchestrator {
 
   resume(jobId) {
     const job = this.jobs.get(jobId);
-    const recoverableError = job?.status === 'error' && isRecoverableBridgeDiagnostic(job.diagnostic);
+    const failedJob = job?.status === 'error';
     if (!job || job.status === 'complete' || job.status === 'cancelled' ||
-        (job.status !== 'paused' && !recoverableError)) return job || null;
+        (job.status !== 'paused' && !failedJob)) return job || null;
     job.pauseRequested = false;
     job.cancelRequested = false;
     this.update(job, {
@@ -487,7 +663,7 @@ class DownloadOrchestrator {
     });
     try {
       const callback = {
-        callbackUrl: this.config.callbackUrl,
+        callbackUrl: resolveCallbackUrl(this.config.callbackUrl),
         callbackToken: job.callbackToken,
         callbackJobId: job.id
       };
@@ -537,30 +713,53 @@ class DownloadOrchestrator {
             continue;
           }
           let result;
-          for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
-            result = await call({
-              url: job.url,
-              chapterUrl: chapter.url,
-              kind: 'novel',
-              mode: 'chapter',
-              maxPages: MAX_PAGES
-            });
-            if (!result?.contentHtml) throw new Error('novel_chapter_content_missing');
-            const hasInlineImages = /<img\b/i.test(result.contentHtml);
-            const imageCount = Array.isArray(result.images) ? result.images.length : 0;
-            if (!hasInlineImages || imageCount > 0) break;
-            if (attempt === MAX_RETRIES) throw new Error('novel_inline_images_missing');
-            this.update(job, { progress: { ...(job.progress || {}), phase: 'retrying', retry: attempt + 1 } });
-            await delay(1000 * (attempt + 1));
+          const imageContext = {
+            runId: crypto.randomUUID(),
+            chapterIndex: index,
+            chapterUrl: chapter.url,
+            evidence: null,
+            assets: []
+          };
+          this.pendingNovelAssets.set(job.id, imageContext);
+          try {
+            for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
+              result = await call({
+                url: job.url,
+                chapterUrl: chapter.url,
+                kind: 'novel',
+                mode: 'chapter',
+                maxPages: MAX_PAGES,
+                includeNovelAssetBytes: true,
+                novelAssetRunId: imageContext.runId,
+                novelChapterIndex: index
+              });
+              if (!result?.contentHtml) throw new Error('novel_chapter_content_missing');
+              const hasInlineImages = /<img\b/i.test(result.contentHtml);
+              const imageCount = Array.isArray(result.images) ? result.images.length : 0;
+              if (!hasInlineImages || imageCount > 0) break;
+              if (attempt === MAX_RETRIES) throw new Error('novel_inline_images_missing');
+              this.update(job, { progress: { ...(job.progress || {}), phase: 'retrying', retry: attempt + 1 } });
+              await delay(1000 * (attempt + 1));
+            }
+          } finally {
+            this.pendingNovelAssets.delete(job.id);
           }
           const evidence = Array.isArray(result.images) ? result.images : [];
           if (/<img\b/i.test(result.contentHtml) && evidence.length === 0) {
             throw new Error('novel_inline_images_missing');
           }
-          const assets = [];
-          for (let imageIndex = 0; imageIndex < evidence.length; imageIndex += 1) {
+          if (imageContext.evidence && (imageContext.evidence.length !== evidence.length ||
+              imageContext.evidence.some((image, position) => image.url !== evidence[position]?.url))) {
+            throw new Error('novel_image_callback_result_mismatch');
+          }
+          const assets = imageContext.evidence
+            ? imageContext.assets
+            : await this.reusableImageAssets(job, index, 'novel', chapter.url, evidence);
+          for (let imageIndex = assets.length; imageIndex < evidence.length;) {
             this.assertActive(job);
-            const image = evidence[imageIndex];
+            const batch = imageContext.evidence
+              ? evidence.slice(imageIndex, imageIndex + NOVEL_ASSET_BATCH_SIZE)
+              : [evidence[imageIndex]];
             this.update(job, {
               bridgeProgress: null,
               progress: {
@@ -573,28 +772,67 @@ class DownloadOrchestrator {
                 imageTotal: evidence.length
               }
             });
-            const asset = await call({
-              url: job.url,
-              chapterUrl: chapter.url,
-              sourcePageUrl: image.pageUrl || chapter.url,
-              assetUrl: image.url,
-              kind: 'novel',
-              mode: 'asset'
-            });
+            const response = imageContext.evidence
+              ? await call({
+                url: job.url,
+                chapterUrl: chapter.url,
+                sourcePageUrl: batch[0].pageUrl || chapter.url,
+                assets: batch.map(image => ({
+                  url: image.url,
+                  ...(image.pageUrl ? { pageUrl: image.pageUrl } : {})
+                })),
+                kind: 'novel',
+                mode: 'assets',
+                continueOnAssetError: true
+              })
+              : await call({
+                url: job.url,
+                chapterUrl: chapter.url,
+                sourcePageUrl: batch[0].pageUrl || chapter.url,
+                assetUrl: batch[0].url,
+                kind: 'novel',
+                mode: 'asset'
+              });
             this.update(job, { bridgeProgress: null });
-            if (!asset?.data) throw new Error('novel_image_asset_bytes_missing');
-            assets.push({ ...asset, sourceUrl: image.url, alt: image.alt || '' });
-            this.update(job, {
-              progress: {
-                phase: 'fetching_images',
-                completed: index,
-                total: chapters.length,
-                chapter: index + 1,
-                chapterTotal: chapters.length,
-                image: imageIndex + 1,
-                imageTotal: evidence.length
+            const downloaded = imageContext.evidence
+              ? (Array.isArray(response?.assets) ? response.assets : [])
+              : [response];
+            if (downloaded.length !== batch.length) throw new Error('novel_asset_batch_incomplete');
+            for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+              const image = batch[batchIndex];
+              let asset = downloaded[batchIndex];
+              if (!asset?.data && imageContext.evidence) {
+                asset = await call({
+                  url: job.url,
+                  chapterUrl: chapter.url,
+                  sourcePageUrl: image.pageUrl || chapter.url,
+                  assetUrl: image.url,
+                  kind: 'novel',
+                  mode: 'asset'
+                });
               }
-            });
+              if (!asset?.data) throw new Error('novel_image_asset_bytes_missing');
+              assets.push({
+                ...asset,
+                width: image.width,
+                height: image.height,
+                sourceUrl: image.url,
+                alt: image.alt || ''
+              });
+              await this.writeImageCheckpoint(job, index, 'novel', chapter.url, evidence, assets);
+              this.update(job, {
+                progress: {
+                  phase: 'fetching_images',
+                  completed: index,
+                  total: chapters.length,
+                  chapter: index + 1,
+                  chapterTotal: chapters.length,
+                  image: imageIndex + batchIndex + 1,
+                  imageTotal: evidence.length
+                }
+              });
+            }
+            imageIndex += batch.length;
           }
           const chapterContent = {
             title: cleanBookTitle(chapter.title || result.title || '第 ' + (index + 1) + ' 章', '第 ' + (index + 1) + ' 章'),
@@ -651,9 +889,9 @@ class DownloadOrchestrator {
         });
         const evidence = Array.isArray(chapterResult?.images) ? chapterResult.images : [];
         if (evidence.length === 0) throw new Error('manga_chapter_images_missing');
-        const assets = [];
+        const assets = await this.reusableImageAssets(job, index, 'manga', chapter.url, evidence);
         const canBatchAssets = isEightComicChapter(chapter, evidence);
-        for (let imageIndex = 0; imageIndex < evidence.length;) {
+        for (let imageIndex = assets.length; imageIndex < evidence.length;) {
           this.assertActive(job);
           const batch = canBatchAssets
             ? evidence.slice(imageIndex, imageIndex + MANGA_ASSET_BATCH_SIZE)
@@ -701,7 +939,8 @@ class DownloadOrchestrator {
             const image = batch[batchIndex];
             const asset = downloaded[batchIndex];
             if (!asset?.data) throw new Error('manga_asset_bytes_missing');
-            assets.push({ ...asset, alt: image.alt || '' });
+            assets.push({ ...asset, sourceUrl: image.url, alt: image.alt || '' });
+            await this.writeImageCheckpoint(job, index, 'manga', chapter.url, evidence, assets);
             this.update(job, {
               progress: {
                 phase: 'fetching_images',
@@ -774,6 +1013,7 @@ class DownloadOrchestrator {
       }
     } finally {
       this.controllers.delete(job.id);
+      this.pendingNovelAssets.delete(job.id);
     }
   }
 

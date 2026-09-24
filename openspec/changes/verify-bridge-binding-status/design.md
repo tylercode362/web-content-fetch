@@ -1,0 +1,3 @@
+# Design
+
+WCF calls `browser.clients.list` using its existing encrypted Bridge client with a short deadline. It classifies `not_configured`, `verified`, `browser_offline`, `authentication_failed`, and `unavailable`. The public status response identifies only the configured Extension UUID, the time WCF completed its check, and that exact Extension's `lastSeenAt` when Bridge supplies a valid timestamp. Status reads never persist, reset, or revoke bindings. UI requests status on load and periodically while visible. The WCF binding ID is internal metadata, not a Bridge server identity. Settings show the bound Extension UUID separately from the browser-local service UUID, and the pairing action targets the Extension that generated the fresh code.

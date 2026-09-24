@@ -70,7 +70,7 @@ class SecureSession {
 
 class BridgeClient {
   constructor(options = {}) {
-    this.baseUrl = normalizeBaseUrl(options.baseUrl || 'http://host.docker.internal:8788');
+    this.baseUrl = normalizeBaseUrl(options.bridgeUrl || options.baseUrl || 'http://host.docker.internal:8788');
     this.expectedFingerprint = options.expectedFingerprint || '';
     this.serviceClientId = options.serviceClientId || crypto.randomUUID();
     this.serviceCredential = options.serviceCredential || '';
@@ -81,7 +81,7 @@ class BridgeClient {
   }
 
   update(options = {}) {
-    const nextUrl = normalizeBaseUrl(options.baseUrl || this.baseUrl);
+    const nextUrl = normalizeBaseUrl(options.bridgeUrl || options.baseUrl || this.baseUrl);
     if (nextUrl !== this.baseUrl) this.invalidateSession();
     this.baseUrl = nextUrl;
     if (options.expectedFingerprint !== undefined) this.expectedFingerprint = String(options.expectedFingerprint || '');
@@ -143,8 +143,8 @@ class BridgeClient {
     };
   }
 
-  async listBrowserClients() {
-    return this.authenticatedRequest('browser.clients.list');
+  async listBrowserClients(options = {}) {
+    return this.authenticatedRequest('browser.clients.list', undefined, undefined, options);
   }
 
   async contentFetch(body, options = {}) {

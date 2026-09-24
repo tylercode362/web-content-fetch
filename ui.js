@@ -10,19 +10,11 @@
     error: '失敗',
     cancelled: '已取消'
   };
-  const recoveryDiagnostics = new Set([
-    'browser_client_disconnected',
-    'browser_client_offline',
-    'browser_command_timeout',
-    'browser_content_selector_timeout',
-    'browser_content_ready_timeout',
-    'browser_navigation_timeout',
-    'novel_inline_images_missing',
-    'bridge_transport_failed',
-    'secure_transport_failed'
-  ]);
   const browserBase = window.location.pathname.startsWith('/web-content-fetch') ? '/web-content-fetch' : '';
   const pendingActions = new Set();
+  let bridgeStatus = null;
+  let bridgeStatusDetails = null;
+  let bridgeStatusKey = '';
 
   const node = (tag, props = {}, children = []) => {
     const value = document.createElement(tag);
@@ -73,7 +65,7 @@
     return value;
   })();
 
-  document.querySelector('#browserServiceId').textContent = '本瀏覽器 service UUID：' + browserServiceId;
+  document.querySelector('#browserServiceId').textContent = '此瀏覽器的服務 UUID：' + browserServiceId;
 
   const setFeedback = (id, message, error = false) => {
     const element = document.querySelector(id);
@@ -166,8 +158,8 @@
     if (['complete', 'error', 'cancelled'].includes(job.status)) {
       add('delete', '清除紀錄與檔案', 'button danger');
     }
-    if (job.status === 'error' && recoveryDiagnostics.has(job.diagnostic)) {
-      add('resume', '保留進度並恢復', 'button secondary');
+    if (job.status === 'error') {
+      add('resume', '從失敗處繼續', 'button secondary');
     }
     actions.forEach(action => parent.append(action));
   };
@@ -324,18 +316,95 @@
       ? binding.bindings[0]
       : binding;
     const bindingId = document.querySelector('#bindingId');
-    if (bindingId) bindingId.textContent = profile?.bindingId || binding.activeBindingId || '尚未建立';
-    document.querySelector('#binding').textContent =
-      (binding.paired ? '已綁定' : '尚未綁定') +
-      ' · ' + (binding.bridgeUrl || '-') +
-      ' · callback ' + (binding.callbackUrl || '-');
+    const key = (profile?.bindingId || '') + ':' + (binding.bridgeUrl || '') + ':' + (binding.browserClientId || '');
+    if (bridgeStatusKey !== key) {
+      bridgeStatusKey = key;
+      bridgeStatus = null;
+      bridgeStatusDetails = null;
+    }
+    if (bindingId) bindingId.textContent = !binding.paired ? '尚未設定' :
+      bridgeStatus === 'verified' ? '授權有效，Extension 在線' :
+      bridgeStatus === 'browser_offline' ? '授權有效，Extension 離線' :
+      bridgeStatus === 'authentication_failed' ? '舊授權已失效，請重新配對' :
+      bridgeStatus === 'unavailable' ? '暫時無法驗證授權' : '已儲存設定，正在驗證';
+    document.querySelector('#boundExtensionId').textContent = '目前綁定的 Extension UUID：' +
+      (binding.browserClientId || '尚未綁定');
+    document.querySelector('#binding').textContent = 'Bridge 網址：' + (binding.bridgeUrl || '-');
+    const heartbeat = document.querySelector('#bridgeHeartbeat');
+    if (heartbeat) {
+      const details = bridgeStatusDetails?.browserClientId === binding.browserClientId
+        ? bridgeStatusDetails
+        : null;
+      const formatTime = value => {
+        const date = value ? new Date(value) : null;
+        return date && Number.isFinite(date.getTime()) ? date.toLocaleString() : '';
+      };
+      const lastHeartbeatAt = formatTime(details?.lastHeartbeatAt);
+      const checkedAt = formatTime(details?.checkedAt);
+      const heartbeatLabel = lastHeartbeatAt
+        ? `最近心跳：${lastHeartbeatAt}`
+        : bridgeStatus === 'browser_offline'
+          ? '最近心跳：Extension 離線，Bridge 未提供時間'
+          : bridgeStatus === 'not_configured'
+            ? '最近心跳：尚未綁定 Extension'
+            : bridgeStatus === 'verified'
+              ? '最近心跳：Bridge 未提供時間'
+              : '最近心跳：目前無法取得';
+      heartbeat.textContent = checkedAt
+        ? `${heartbeatLabel}｜最近檢查：${checkedAt}`
+        : heartbeatLabel;
+    }
     const connection = document.querySelector('#connection');
-    connection.dataset.state = binding.paired ? 'ok' : 'bad';
-    connection.textContent = binding.paired ? 'Bridge 已連線' : 'Bridge 未連線';
+    connection.dataset.state = bridgeStatus === 'verified' ? 'ok' : 'bad';
+    connection.textContent = !binding.paired ? '尚未配對 Bridge' :
+      bridgeStatus === 'verified' ? 'Bridge 授權已驗證' :
+      bridgeStatus === 'browser_offline' ? 'Extension 目前離線' :
+      bridgeStatus === 'authentication_failed' ? 'Bridge 授權已失效' :
+      bridgeStatus === 'unavailable' ? '暫時無法驗證 Bridge' : '正在驗證 Bridge 授權';
   };
 
+  let pairingFeedbackPending = false;
+
+  async function checkBridgeStatus() {
+    const requestedKey = bridgeStatusKey;
+    let nextStatus;
+    let nextDetails = null;
+    try {
+      const response = await fetch(browserBase + '/api/bridge/status', {
+        credentials: 'same-origin', cache: 'no-store'
+      });
+      if (!response.ok) throw new Error('status_http_' + response.status);
+      const payload = await response.json();
+      if (payload.browserClientId !== (currentBinding.browserClientId || null)) {
+        nextStatus = 'unavailable';
+      } else {
+        nextStatus = payload.status;
+        nextDetails = payload;
+      }
+    } catch {
+      nextStatus = 'unavailable';
+    }
+    if (requestedKey !== bridgeStatusKey) return;
+    bridgeStatus = nextStatus;
+    bridgeStatusDetails = nextDetails;
+    renderBinding(currentBinding);
+    if (pairingFeedbackPending) {
+      const message = bridgeStatus === 'verified' ? '配對成功，Extension 在線' :
+        bridgeStatus === 'browser_offline' ? '配對成功，Extension 目前離線' :
+        bridgeStatus === 'authentication_failed' ? '配對已儲存，但授權驗證失敗' :
+        bridgeStatus === 'unavailable' ? '配對已儲存，但暫時無法驗證授權' :
+        '配對已儲存，授權狀態尚未確認';
+      setFeedback('#configStatus', message,
+        bridgeStatus === 'authentication_failed' || bridgeStatus === 'unavailable');
+      pairingFeedbackPending = false;
+    }
+  }
+
+  let currentBinding = {};
+
   const render = data => {
-    renderBinding(data.binding || {});
+    currentBinding = data.binding || {};
+    renderBinding(currentBinding);
     renderJobs(data.jobs || []);
   };
 
@@ -348,8 +417,8 @@
       if (!response.ok) throw new Error('state_http_' + response.status);
       const data = await response.json();
       document.querySelector('#bridgeUrl').value = data.binding?.bridgeUrl || '';
-      document.querySelector('#callbackUrl').value = data.binding?.callbackUrl || '';
       render(data);
+      await checkBridgeStatus();
     } catch (error) {
       const connection = document.querySelector('#connection');
       connection.dataset.state = 'bad';
@@ -405,15 +474,17 @@
   document.querySelector('#saveConfig').onclick = async () => {
     try {
       const payload = await responsePayload(await post('/api/config', {
-        bridgeUrl: document.querySelector('#bridgeUrl').value,
-        callbackUrl: document.querySelector('#callbackUrl').value
+        bridgeUrl: document.querySelector('#bridgeUrl').value
       }));
       setFeedback('#configStatus', payload.rebindRequired
         ? 'Bridge URL 已變更，請重新輸入六碼配對碼'
         : '設定已儲存');
       await refresh();
     } catch (error) {
-      setFeedback('#configStatus', error.message, true);
+      const messages = {
+        callback_url_managed_by_deployment: '回呼位址由服務自動管理'
+      };
+      setFeedback('#configStatus', messages[error.message] || error.message, true);
     }
   };
 
@@ -424,10 +495,17 @@
         bridgeUrl: document.querySelector('#bridgeUrl').value,
         serviceClientId: browserServiceId
       }));
-      setFeedback('#configStatus', 'Bridge 綁定成功');
+      document.querySelector('#pairCode').value = '';
+      pairingFeedbackPending = true;
+      setFeedback('#configStatus', '配對完成，正在驗證授權');
       await refresh();
     } catch (error) {
-      setFeedback('#configStatus', error.message, true);
+      pairingFeedbackPending = false;
+      document.querySelector('#pairCode').value = '';
+      const message = error.message === 'authentication_failed'
+        ? '配對失敗：請確認六碼仍有效，且來自目前設定的 Chrome Bridge。'
+        : error.message;
+      setFeedback('#configStatus', message, true);
     }
   };
 
@@ -511,4 +589,7 @@
   };
 
   refresh();
+  setInterval(() => {
+    if (document.visibilityState === 'visible') checkBridgeStatus();
+  }, 15000);
 })();

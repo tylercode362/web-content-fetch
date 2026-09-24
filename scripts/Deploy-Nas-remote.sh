@@ -145,6 +145,8 @@ rollback() {
     tar -xf "$backup_root/runtime-source.tar" -C "$remote_project"
     cp -p "$backup_root/.env" "$remote_project/.env"
     [ ! -f "$backup_root/compose.nas.yaml" ] || cp -p "$backup_root/compose.nas.yaml" "$remote_project/compose.nas.yaml"
+    compose_file="$remote_project/compose.yaml"
+    nas_compose_file="$remote_project/compose.nas.yaml"
     compose up -d --build --force-recreate web-content-fetch
   fi
   set -e

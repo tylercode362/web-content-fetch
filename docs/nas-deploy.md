@@ -15,8 +15,9 @@ NAS `.env` 至少設定：
 
 使用 `-InitializeRemoteConfig` 時，腳本會在暫存副本中將 Bridge 與 callback
 改成上述 NAS 位址，並依 `-NasHost` 設定 Gateway callback origin，不會改寫本機 `.env`。
-網頁的 Callback URL 可填 `http://<NAS_HOST>:8088/web-content-fetch/api/bridge/callback`；
-WCF 只接受部署設定的 Gateway origin，並會轉成 Docker network 內的 callback 位址。
+Callback URL 由服務依部署設定自動管理，網頁不提供輸入欄位，也不顯示此內部位址。
+NAS 上 Bridge 透過共用 Docker network 回呼 web-content-fetch 服務；
+瀏覽器使用的 Gateway 網址不會被誤當成容器內的回呼位址。
 
 建議順序：
 

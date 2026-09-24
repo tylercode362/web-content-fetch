@@ -88,6 +88,9 @@ test('queue UI uses one binding, has CSRF recovery, and reports terminal cleanup
   const uiSource = await fs.readFile(path.join(__dirname, '..', 'ui.js'), 'utf8');
   const cssSource = await fs.readFile(path.join(__dirname, '..', 'ui.css'), 'utf8');
   const modernUi = source.split('function renderHtml(token) {')[1].split('const server =')[0];
+  assert.doesNotMatch(modernUi, /Callback URL|callbackUrl|callbackDelivery|useGatewayCallback/);
+  assert.doesNotMatch(uiSource, /callbackUrl|callbackDelivery|useGatewayCallback/);
+  assert.match(uiSource, /job.status === 'error'\) \{\s*add\('resume', '從失敗處繼續'/);
   assert.doesNotMatch(modernUi, /jobBinding|bindingSelect/);
   assert.match(modernUi, /bindingId/);
   assert.match(source, /api\/csrf/);
@@ -96,10 +99,17 @@ test('queue UI uses one binding, has CSRF recovery, and reports terminal cleanup
   assert.match(uiSource, /csrf_forbidden/);
   assert.match(uiSource, /renewCsrf/);
   assert.match(uiSource, /payload\.rebindRequired/);
+  assert.match(source, /url\.pathname === '\/api\/bridge\/status'/);
+  assert.match(uiSource, /Bridge 授權已失效/);
+  assert.match(uiSource, /Extension 目前離線/);
+  assert.match(modernUi, /boundExtensionId/);
+  assert.match(uiSource, /目前綁定的 Extension UUID/);
+  assert.doesNotMatch(uiSource, /Bridge 已連線/);
   assert.match(cssSource, /form #url{min-width:0/);
   assert.match(cssSource, /\.job-grid\{display:flex;flex-direction:column/);
   assert.match(cssSource, /\.outputs\{order:2;width:100%;border:0;border-top:1px solid/);
   assert.match(cssSource, /\.chapter-download-bar\{/);
+  assert.match(cssSource, /@media\(max-width:640px\).*\.settings-actions\{flex-direction:column/);
 });
 
 test('reusable deployment script is confirmation-gated and health-checked', async () => {
@@ -114,6 +124,7 @@ test('reusable deployment script is confirmation-gated and health-checked', asyn
 test('NAS deployment uses fixed networks and explicit config initialization', async () => {
   const source = await fs.readFile(path.join(__dirname, '..', 'scripts', 'Deploy-Nas.ps1'), 'utf8');
   const remoteSource = await fs.readFile(path.join(__dirname, '..', 'scripts', 'Deploy-Nas-remote.sh'), 'utf8');
+  assert.match(remoteSource, /compose_file="\$remote_project\/compose\.yaml"\s+nas_compose_file="\$remote_project\/compose\.nas\.yaml"\s+compose up -d --build --force-recreate web-content-fetch/s);
   const overlay = await fs.readFile(path.join(__dirname, '..', 'compose.nas.example.yaml'), 'utf8');
   assert.match(source, /ConfirmDeploy/);
   assert.match(source, /--exclude=\.env/);
@@ -146,4 +157,16 @@ test('package and lockfile versions stay synchronized', async () => {
   const lockJson = JSON.parse(await fs.readFile(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
   assert.equal(lockJson.version, packageJson.version);
   assert.equal(lockJson.packages[''].version, packageJson.version);
+});
+
+test('pairing feedback resolves to the verified authorization result', async () => {
+  const uiSource = await fs.readFile(path.join(__dirname, '..', 'ui.js'), 'utf8');
+  assert.match(uiSource, /pairingFeedbackPending/);
+  assert.match(uiSource, /bridgeStatus === 'verified' \? '配對成功，Extension 在線'/);
+  assert.match(uiSource, /bridgeStatus === 'browser_offline' \? '配對成功，Extension 目前離線'/);
+  assert.match(uiSource, /bridgeStatus === 'authentication_failed' \? '配對已儲存，但授權驗證失敗'/);
+  assert.match(uiSource, /bridgeStatus === 'unavailable' \? '配對已儲存，但暫時無法驗證授權'/);
+  assert.match(uiSource, /最近心跳：/);
+  assert.match(uiSource, /最近檢查：/);
+  assert.match(uiSource, /payload\.browserClientId !== \(currentBinding\.browserClientId \|\| null\)/);
 });

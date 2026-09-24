@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -20,13 +21,77 @@ test('Bridge network failures use a recoverable transport diagnostic', async () 
   );
 });
 
+test('Bridge client keeps the supplied binding URL through construction and update', () => {
+  const client = new BridgeClient({ bridgeUrl: 'http://192.168.50.140:8088/chrome-bridge' });
+  assert.equal(client.baseUrl, 'http://192.168.50.140:8088/chrome-bridge');
+  client.update({ bridgeUrl: 'http://192.168.50.141:8088/chrome-bridge' });
+  assert.equal(client.baseUrl, 'http://192.168.50.141:8088/chrome-bridge');
+});
+
+test('saved Bridge credentials are verified without changing binding state', async () => {
+  const previousList = BridgeClient.prototype.listBrowserClients;
+  const browserClientId = '33333333-3333-4333-8333-333333333333';
+  const config = normalizeConfig({
+    bridgeUrl: 'http://192.168.50.140:8088/chrome-bridge',
+    serviceClientId: '11111111-1111-4111-8111-111111111111',
+    serviceCredential: 'saved-credential',
+    browserClientId
+  });
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map(), update() {}, config, saveConfig: async () => {
+      throw new Error('status must not persist');
+    }, outputDir: '/tmp/output'
+  });
+  const snapshot = JSON.stringify(config);
+  try {
+    BridgeClient.prototype.listBrowserClients = async () => ({ success: false, code: 'authentication_failed' });
+    const authFailure = await orchestrator.bindingStatus();
+    assert.equal(authFailure.status, 'authentication_failed');
+    assert.equal(authFailure.browserClientId, browserClientId);
+    assert.equal(authFailure.lastHeartbeatAt, null);
+    assert.ok(Number.isFinite(Date.parse(authFailure.checkedAt)));
+    BridgeClient.prototype.listBrowserClients = async () => ({ success: true, clients: [] });
+    const offline = await orchestrator.bindingStatus();
+    assert.equal(offline.status, 'browser_offline');
+    assert.equal(offline.lastHeartbeatAt, null);
+    BridgeClient.prototype.listBrowserClients = async () => ({
+      success: true, clients: [{
+        browserClientId, online: true, lastSeenAt: '2026-09-25T10:20:30.000Z'
+      }]
+    });
+    const verified = await orchestrator.bindingStatus();
+    assert.equal(verified.status, 'verified');
+    assert.equal(verified.browserClientId, browserClientId);
+    assert.equal(verified.lastHeartbeatAt, '2026-09-25T10:20:30.000Z');
+    assert.ok(Number.isFinite(Date.parse(verified.checkedAt)));
+    BridgeClient.prototype.listBrowserClients = async () => ({
+      success: true, clients: [{
+        browserClientId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        online: true,
+        lastSeenAt: '2026-09-25T10:20:30.000Z'
+      }]
+    });
+    const otherExtension = await orchestrator.bindingStatus();
+    assert.equal(otherExtension.status, 'browser_offline');
+    assert.equal(otherExtension.lastHeartbeatAt, null);
+    BridgeClient.prototype.listBrowserClients = async () => { throw new Error('secret details'); };
+    const unavailable = await orchestrator.bindingStatus();
+    assert.equal(unavailable.status, 'unavailable');
+    assert.equal(unavailable.lastHeartbeatAt, null);
+    assert.ok(Number.isFinite(Date.parse(unavailable.checkedAt)));
+    assert.equal(JSON.stringify(config), snapshot);
+  } finally {
+    BridgeClient.prototype.listBrowserClients = previousList;
+  }
+});
+
 test('pairing updates the single WCF Bridge binding', async () => {
   const previousPair = BridgeClient.prototype.pair;
   const saved = [];
   try {
     BridgeClient.prototype.pair = async function (code) {
       assert.equal(code, '123456');
-      assert.equal(this.baseUrl, 'http://host.docker.internal:8788');
+      assert.equal(this.baseUrl, 'http://192.168.50.140:8088/chrome-bridge');
       assert.equal(this.serviceClientId, '22222222-2222-4222-8222-222222222222');
       this.serviceCredential = 'new-credential';
       this.browserClientId = '44444444-4444-4444-8444-444444444444';
@@ -48,11 +113,17 @@ test('pairing updates the single WCF Bridge binding', async () => {
       browserClientId: '33333333-3333-4333-8333-333333333333'
     });
     const oldBindingId = config.bindings[0].bindingId;
+    const pausedJob = { id: 'paused-job', status: 'paused', bindingId: oldBindingId,
+      browserClientId: '33333333-3333-4333-8333-333333333333' };
+    const completeJob = { id: 'complete-job', status: 'complete', bindingId: oldBindingId,
+      browserClientId: '33333333-3333-4333-8333-333333333333' };
     const orchestrator = new DownloadOrchestrator({
-      jobs: new Map(), update() {}, config, saveConfig: async value => saved.push(JSON.parse(JSON.stringify(value))), outputDir: '/tmp/output'
+      jobs: new Map([['paused-job', pausedJob], ['complete-job', completeJob]]), update() {},
+      config, saveConfig: async value => saved.push(JSON.parse(JSON.stringify(value))), outputDir: '/tmp/output'
     });
 
     const result = await orchestrator.pair('123456', {
+      bridgeUrl: 'http://192.168.50.140:8088/chrome-bridge',
       serviceClientId: '22222222-2222-4222-8222-222222222222'
     });
     assert.equal(result.bindings.length, 1);
@@ -63,6 +134,9 @@ test('pairing updates the single WCF Bridge binding', async () => {
     assert.equal(saved[0].bindings.length, 1);
     assert.ok(saved[0].bindingAliases.includes(oldBindingId));
     assert.equal(saved[0].activeBindingId, result.activeBindingId);
+    assert.equal(saved[0].bindings[0].bridgeUrl, 'http://192.168.50.140:8088/chrome-bridge');
+    assert.equal(pausedJob.browserClientId, '44444444-4444-4444-8444-444444444444');
+    assert.equal(completeJob.browserClientId, '33333333-3333-4333-8333-333333333333');
   } finally {
     BridgeClient.prototype.pair = previousPair;
   }
@@ -332,7 +406,7 @@ test('browser client disconnect is retried with the existing binding', async () 
   assert.ok(phases.includes('retrying'));
 });
 
-test('8Comic manga images are fetched in bounded batches', async () => {
+test('8Comic manga resumes after a failed image batch without refetching completed images', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-manga-batch-'));
   const bindingId = '77777777-7777-4777-8777-777777777777';
   const config = normalizeConfig({
@@ -388,6 +462,7 @@ test('8Comic manga images are fetched in bounded batches', async () => {
       };
       assert.equal(body.mode, 'assets');
       batchSizes.push(body.assets.length);
+      if (batchSizes.length === 2) return { success: true, assets: [] };
       return {
         success: true,
         assets: body.assets.map(image => ({
@@ -403,7 +478,14 @@ test('8Comic manga images are fetched in bounded batches', async () => {
 
   await orchestrator.run(job);
 
-  assert.deepEqual(batchSizes, [8, 1]);
+  assert.equal(job.status, 'error');
+  assert.equal((await orchestrator.readChapterCheckpoint(job, 0, '-images')).assetCount, 8);
+  orchestrator.drain = async () => {};
+  orchestrator.resume(job.id);
+  assert.equal(job.status, 'queued');
+  await orchestrator.run(job);
+
+  assert.deepEqual(batchSizes, [8, 1, 1]);
   assert.equal(job.status, 'complete');
   assert.equal(job.progress.completed, 1);
   assert.equal(job.outputs.length, 2);
@@ -482,7 +564,7 @@ test('recoverable disconnect error jobs resume without removing checkpoints', as
   await assert.doesNotReject(() => fs.access(orchestrator.stagePath(job)));
 });
 
-test('non-recoverable error jobs remain terminal', async () => {
+test('any error job can be requeued without deleting saved progress', async () => {
   const job = { id: 'job-parser-error', status: 'error', diagnostic: 'chapter_list_empty' };
   const orchestrator = new DownloadOrchestrator({
     jobs: new Map([[job.id, job]]),
@@ -492,8 +574,211 @@ test('non-recoverable error jobs remain terminal', async () => {
     update(value, change) { Object.assign(value, change); }
   });
 
+  orchestrator.drain = async () => {};
   assert.equal(orchestrator.resume(job.id), job);
+  assert.equal(job.status, 'queued');
+  assert.equal(job.diagnostic, null);
+});
+
+test('partial image checkpoints are reused only for matching chapter evidence', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-partial-images-'));
+  const job = { id: 'job-image-identity' };
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]),
+    config: normalizeConfig({}),
+    saveConfig: async () => {},
+    outputDir: path.join(root, 'output'),
+    checkpointDir: path.join(root, 'checkpoints'),
+    update(value, change) { Object.assign(value, change); }
+  });
+  const evidence = [{ url: 'https://images.example.test/1.jpg' }, { url: 'https://images.example.test/2.jpg' }];
+  const asset = { sourceUrl: evidence[0].url, data: 'YWJj', mime: 'image/jpeg' };
+  await orchestrator.writeImageCheckpoint(job, 0, 'novel', 'https://books.example.test/1', evidence, [asset]);
+  assert.deepEqual(
+    await orchestrator.reusableImageAssets(job, 0, 'novel', 'https://books.example.test/1', evidence),
+    [asset]
+  );
+  assert.deepEqual(
+    await orchestrator.reusableImageAssets(job, 0, 'novel', 'https://books.example.test/2', evidence),
+    []
+  );
+  assert.deepEqual(
+    await orchestrator.reusableImageAssets(job, 0, 'novel', 'https://books.example.test/1', [
+      evidence[0], { url: 'https://images.example.test/changed.jpg' }
+    ]),
+    []
+  );
+  await orchestrator.removeJobFiles(job);
+  await assert.rejects(() => fs.access(orchestrator.checkpointPath(job)));
+});
+
+test('novel resumes after a failed inline image without refetching verified images', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-novel-image-resume-'));
+  const bindingId = '12121212-1212-4212-8212-121212121212';
+  const chapterUrl = 'https://tw.linovelib.com/novel/2014/100.html';
+  const imageUrls = [
+    'https://images.example.test/novel-1.png',
+    'https://images.example.test/novel-2.png'
+  ];
+  const config = normalizeConfig({
+    bindings: [{
+      bindingId,
+      bridgeUrl: 'http://host.docker.internal:8788',
+      serviceClientId: '34343434-3434-4434-8434-343434343434',
+      serviceCredential: 'credential',
+      browserClientId: '56565656-5656-4656-8656-565656565656'
+    }],
+    activeBindingId: bindingId,
+    callbackUrl: 'http://host.docker.internal:8092/api/bridge/callback'
+  });
+  const job = {
+    id: 'job-novel-image-resume',
+    url: 'https://tw.linovelib.com/novel/2014.html',
+    kind: 'novel',
+    status: 'queued',
+    bindingId,
+    callbackToken: 'callback-token',
+    progress: { phase: 'queued', completed: 0, total: null }
+  };
+  const imageData = (await sharp({
+    create: { width: 40, height: 60, channels: 4, background: '#00ff00' }
+  }).png().toBuffer()).toString('base64');
+  const fetchedAssets = [];
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]),
+    config,
+    saveConfig: async () => {},
+    outputDir: path.join(root, 'output'),
+    checkpointDir: path.join(root, 'checkpoints'),
+    update(value, change) { Object.assign(value, change); }
+  });
+  orchestrator.clients.set(bindingId, {
+    paired: true,
+    async contentFetch(body) {
+      if (body.mode === 'chapters') return {
+        success: true, title: '插圖小說', chapters: [{ url: chapterUrl, title: '第一章' }]
+      };
+      if (body.mode === 'chapter') return {
+        success: true,
+        contentHtml: `<p>正文</p><img src="${imageUrls[0]}"><img src="${imageUrls[1]}">`,
+        images: imageUrls.map(url => ({ url, pageUrl: chapterUrl }))
+      };
+      assert.equal(body.mode, 'asset');
+      fetchedAssets.push(body.assetUrl);
+      if (fetchedAssets.length === 2) return { success: true };
+      return { success: true, data: imageData, mime: 'image/png' };
+    }
+  });
+
+  await orchestrator.run(job);
   assert.equal(job.status, 'error');
+  assert.equal((await orchestrator.readChapterCheckpoint(job, 0, '-images')).assetCount, 1);
+  orchestrator.drain = async () => {};
+  orchestrator.resume(job.id);
+  await orchestrator.run(job);
+  assert.equal(job.status, 'complete');
+  assert.deepEqual(fetchedAssets, [imageUrls[0], imageUrls[1], imageUrls[1]]);
+  assert.equal(job.outputs.length, 2);
+});
+
+test('novel image batches resume from ordered callback checkpoints after a partial batch failure', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-novel-batch-resume-'));
+  const bindingId = '12121212-1212-4212-8212-121212121212';
+  const chapterUrl = 'https://tw.linovelib.com/novel/2014/100.html';
+  const imageUrls = Array.from({ length: 5 }, (_value, index) =>
+    'https://img.linovelib.com/novel-' + (index + 1) + '.png');
+  const config = normalizeConfig({
+    bindings: [{
+      bindingId,
+      bridgeUrl: 'http://host.docker.internal:8788',
+      serviceClientId: '34343434-3434-4434-8434-343434343434',
+      serviceCredential: 'credential',
+      browserClientId: '56565656-5656-4656-8656-565656565656'
+    }],
+    activeBindingId: bindingId,
+    callbackUrl: 'http://host.docker.internal:8092/api/bridge/callback'
+  });
+  const job = {
+    id: 'job-novel-batch-resume',
+    url: 'https://tw.linovelib.com/novel/2014.html',
+    kind: 'novel',
+    status: 'queued',
+    bindingId,
+    callbackToken: 'callback-token',
+    progress: { phase: 'queued', completed: 0, total: null }
+  };
+  const imageData = (await sharp({
+    create: { width: 40, height: 60, channels: 4, background: '#00ff00' }
+  }).png().toBuffer()).toString('base64');
+  const digest = crypto.createHash('sha256').update(Buffer.from(imageData, 'base64')).digest('hex');
+  const resumeStarts = [];
+  const chapterCalls = [];
+  const failedBatches = [];
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]),
+    config,
+    saveConfig: async () => {},
+    outputDir: path.join(root, 'output'),
+    checkpointDir: path.join(root, 'checkpoints'),
+    update(value, change) { Object.assign(value, change); }
+  });
+  orchestrator.clients.set(bindingId, {
+    paired: true,
+    async contentFetch(body) {
+      if (body.mode === 'chapters') return {
+        success: true, title: '插圖小說', chapters: [{ url: chapterUrl, title: '第一章' }]
+      };
+      if (body.mode === 'chapter') {
+        chapterCalls.push(body);
+        const evidence = imageUrls.map((url, index) => ({
+          url,
+          pageUrl: chapterUrl,
+          width: 40,
+          height: 60,
+          alt: '插圖 ' + (index + 1)
+        }));
+        const result = await orchestrator.registerNovelImagesCallback(job.id, {
+          runId: body.novelAssetRunId,
+          chapterIndex: body.novelChapterIndex,
+          images: evidence
+        });
+        resumeStarts.push(result.resumeFromImageIndex);
+        const firstImageToSend = chapterCalls.length === 1 ? 0 : result.resumeFromImageIndex;
+        const lastImageToSend = chapterCalls.length === 1 ? 2 : evidence.length;
+        for (let imageIndex = firstImageToSend; imageIndex < lastImageToSend; imageIndex += 1) {
+          await orchestrator.acceptNovelAssetCallback(job.id, {
+            runId: body.novelAssetRunId,
+            chapterIndex: body.novelChapterIndex,
+            imageIndex,
+            sourceUrl: evidence[imageIndex].url,
+            asset: { data: imageData, mime: 'image/png', sha256: digest }
+          });
+        }
+        return {
+          success: true,
+          title: '第一章',
+          contentHtml: '<p>正文</p><img src="' + imageUrls[0] + '">',
+          images: evidence
+        };
+      }
+      assert.equal(body.mode, 'assets');
+      failedBatches.push(body.assets.map(image => image.url));
+      return { success: true, assets: [] };
+    }
+  });
+
+  await orchestrator.run(job);
+  assert.equal(job.status, 'error');
+  assert.equal((await orchestrator.readChapterCheckpoint(job, 0, '-images')).assetCount, 2);
+  orchestrator.drain = async () => {};
+  orchestrator.resume(job.id);
+  await orchestrator.run(job);
+
+  assert.equal(job.status, 'complete');
+  assert.deepEqual(resumeStarts, [0, 2]);
+  assert.equal(chapterCalls.length, 2);
+  assert.deepEqual(failedBatches, [imageUrls.slice(2)]);
+  assert.equal(job.outputs.length, 2);
 });
 
 test('terminal job deletion removes its record, outputs and checkpoints', async () => {

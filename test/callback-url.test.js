@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateCallbackUrl } = require('../callback-url');
+const { validateCallbackUrl, resolveCallbackUrl } = require('../callback-url');
 
 const env = {
   WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS: 'http://192.168.50.140:8088',
@@ -8,9 +8,14 @@ const env = {
   WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS: 'host.docker.internal,web-content-fetch'
 };
 
-test('normalizes the configured Gateway callback route to the in-network WCF endpoint', () => {
+test('keeps the configured Gateway route visible while Bridge receives the internal endpoint', () => {
+  const gatewayUrl = 'http://192.168.50.140:8088/web-content-fetch/api/bridge/callback';
   assert.equal(
-    validateCallbackUrl('http://192.168.50.140:8088/web-content-fetch/api/bridge/callback', env),
+    validateCallbackUrl(gatewayUrl, env),
+    gatewayUrl
+  );
+  assert.equal(
+    resolveCallbackUrl(gatewayUrl, env),
     'http://web-content-fetch:8092/api/bridge/callback'
   );
 });
@@ -20,6 +25,20 @@ test('accepts the configured in-network callback endpoint', () => {
     validateCallbackUrl('http://web-content-fetch:8092/api/bridge/callback', env),
     'http://web-content-fetch:8092/api/bridge/callback'
   );
+  assert.equal(
+    resolveCallbackUrl('http://web-content-fetch:8092/api/bridge/callback', env),
+    'http://web-content-fetch:8092/api/bridge/callback'
+  );
+});
+
+test('an approved alternate Gateway origin stays editable', () => {
+  const alternateEnv = {
+    ...env,
+    WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS: 'http://192.168.50.140:8088,https://books.example.test'
+  };
+  const gatewayUrl = 'https://books.example.test/web-content-fetch/api/bridge/callback';
+  assert.equal(validateCallbackUrl(gatewayUrl, alternateEnv), gatewayUrl);
+  assert.equal(resolveCallbackUrl(gatewayUrl, alternateEnv), env.WEB_CONTENT_FETCH_CALLBACK_URL);
 });
 
 test('keeps existing host-gateway callback settings readable during migration', () => {
@@ -35,6 +54,9 @@ test('rejects unconfigured proxy origins, unexpected paths, loopback and unallow
   ), /callback_url_origin_forbidden/);
   assert.throws(() => validateCallbackUrl(
     'http://192.168.50.140:8088/other/api/bridge/callback', env
+  ), /callback_url_invalid/);
+  assert.throws(() => validateCallbackUrl(
+    'http://192.168.50.140:8088/web-content-fetch/api/bridge/callback/api/bridge/callback', env
   ), /callback_url_invalid/);
   assert.throws(() => validateCallbackUrl(
     'http://127.0.0.1:8092/api/bridge/callback', env
