@@ -1,0 +1,5 @@
+- [x] Add a regression test for LF-only helper staging.
+- [x] Normalize the uploaded helper without modifying the checked-in source.
+- [x] Add a repository line-ending policy for shell scripts.
+- [x] Apply the PATCH version update.
+- [x] Run container tests, Compose, shell syntax, OpenSpec strict, and diff checks.

@@ -165,6 +165,7 @@ foreach ($path in @($remoteProjectRoot, $remoteStage, $remoteBackup)) {
 
 $archive = Join-Path ([IO.Path]::GetTempPath()) "web-content-fetch-$runId.tar"
 $temporaryConfig = $null
+$temporaryHelper = Join-Path ([IO.Path]::GetTempPath()) "web-content-fetch-$runId-remote.sh"
 $configToUpload = $localConfig
 $helperSource = Join-Path $localRoot 'scripts\Deploy-Nas-remote.sh'
 $archiveRemote = "{0}@{1}:{2}" -f $NasUser, $NasHost, $remoteArchive
@@ -175,6 +176,9 @@ try {
   if (-not (Test-Path -LiteralPath $helperSource -PathType Leaf)) {
     Fail "找不到遠端部署 helper：$helperSource"
   }
+
+  $helperContent = [IO.File]::ReadAllText($helperSource).Replace("`r`n", "`n").Replace("`r", "`n")
+  [IO.File]::WriteAllText($temporaryHelper, $helperContent, [Text.UTF8Encoding]::new($false))
 
   if ($InitializeRemoteConfig) {
     $temporaryConfig = Join-Path ([IO.Path]::GetTempPath()) "web-content-fetch-$runId-nas.env"
@@ -206,7 +210,7 @@ try {
 
   Write-Host '上傳部署封裝與遠端 helper；這兩步不需要 sudo。' -ForegroundColor Cyan
   Invoke-CheckedNative -File 'scp' -Arguments @('-O', '-i', $IdentityFile, '-P', $NasPort.ToString(), '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new', $archive, $archiveRemote)
-  Invoke-CheckedNative -File 'scp' -Arguments @('-O', '-i', $IdentityFile, '-P', $NasPort.ToString(), '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new', $helperSource, $helperRemote)
+  Invoke-CheckedNative -File 'scp' -Arguments @('-O', '-i', $IdentityFile, '-P', $NasPort.ToString(), '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new', $temporaryHelper, $helperRemote)
 
   if ($InitializeRemoteConfig) {
     Invoke-RemoteDeploy "set -eu; mkdir -p '$remoteStage'; chmod 700 '$remoteStage'"
@@ -245,6 +249,9 @@ try {
   }
   if ($temporaryConfig -and (Test-Path -LiteralPath $temporaryConfig)) {
     Remove-Item -LiteralPath $temporaryConfig -Force
+  }
+  if (Test-Path -LiteralPath $temporaryHelper) {
+    Remove-Item -LiteralPath $temporaryHelper -Force
   }
   if (-not $deployed) {
     Write-Host '部署狀態：未完成。未執行全域 Docker 清理，也未刪除遠端 recovery 資料。' -ForegroundColor Yellow

@@ -133,6 +133,10 @@ test('NAS deployment uses fixed networks and explicit config initialization', as
   assert.match(source, /--exclude=secrets/);
   assert.match(source, /--exclude=exports/);
   assert.match(source, /Deploy-Nas-remote\.sh/);
+  assert.match(source, /ReadAllText\(\$helperSource\).*Replace\("`r`n", "`n"\).*Replace\("`r", "`n"\)/);
+  assert.match(source, /WriteAllText\(\$temporaryHelper, \$helperContent, \[Text\.UTF8Encoding\]::new\(\$false\)\)/);
+  assert.match(source, /'scp'.*\$temporaryHelper, \$helperRemote/s);
+  assert.doesNotMatch(source, /'scp'.*\$helperSource, \$helperRemote/s);
   assert.match(source, /InitializeRemoteConfig/);
   assert.match(source, /remoteStage.*\.env/);
   assert.doesNotMatch(source, /WEB_CONTENT_FETCH_BRIDGE_URL|WEB_CONTENT_FETCH_CALLBACK_/);
