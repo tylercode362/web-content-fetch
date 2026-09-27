@@ -5,11 +5,9 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const JSZip = require('jszip');
 const { DownloadOrchestrator, publicBinding, safeDiagnostic, isClearable } = require('./job-orchestrator');
-const { normalizeBaseUrl } = require('./bridge-client');
 const { applyBindingToJob, getBinding, normalizeConfig } = require('./binding-store');
 const { publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('./job-view');
 const { createCsrfStore } = require('./csrf');
-const { validateCallbackUrl } = require('./callback-url');
 
 const host = process.env.WEB_CONTENT_FETCH_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.WEB_CONTENT_FETCH_PORT || 8092);
@@ -33,13 +31,7 @@ function loadConfig() {
   try { value = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch (error) {
     if (error.code !== 'ENOENT') console.error('configuration unavailable');
   }
-  const normalized = normalizeConfig(value, {
-    ...process.env,
-    WEB_CONTENT_FETCH_CALLBACK_URL: process.env.WEB_CONTENT_FETCH_CALLBACK_URL ||
-      `http://host.docker.internal:${port}/api/bridge/callback`
-  });
-  normalized.callbackUrl = validateCallbackUrl(normalized.callbackUrl);
-  return normalized;
+  return normalizeConfig(value, process.env);
 }
 
 async function saveConfig(value) {
@@ -97,7 +89,6 @@ function publicJob(job) {
       : null,
     chapterCount: job.chapterCount || null,
     bindingId: job.bindingId || null,
-    bridgeUrl: job.bridgeUrl || null,
     browserClientId: job.browserClientId || null,
     serviceClientId: job.serviceClientId || null,
     createdAt: job.createdAt,
@@ -169,8 +160,11 @@ function csrfAllowed(request) {
 }
 
 function callbackAllowed(request, job) {
-  return Boolean(job && typeof request.headers['x-bridge-callback-token'] === 'string' &&
-    request.headers['x-bridge-callback-token'] === job.callbackToken);
+  const authorization = String(request.headers.authorization || '');
+  const bearerToken = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  const legacyToken = typeof request.headers['x-bridge-callback-token'] === 'string'
+    ? request.headers['x-bridge-callback-token'] : '';
+  return Boolean(job && (bearerToken === job.callbackToken || legacyToken === job.callbackToken));
 }
 
 function sendJson(response, status, value, extra) {
@@ -207,8 +201,7 @@ function renderHtml(token) {
     '<link rel="stylesheet" href="ui.css"></head><body>' +
     '<main class="shell"><header class="hero"><div><p class="eyebrow">LOCAL CONTENT WORKSPACE</p><h1>內容下載任務</h1><p class="lede">小說整部輸出；漫畫逐章／逐卷完成就能下載。</p></div><div id="connection" class="connection" data-state="unknown">檢查 Bridge 中…</div></header>' +
     '<section class="panel settings"><div class="section-heading"><div><p class="eyebrow">連線設定</p><h2>Chrome Bridge 設定</h2></div><span class="section-note">六碼僅供建立授權</span></div>' +
-    '<div class="settings-grid"><label>Chrome Bridge 網址<input id="bridgeUrl" type="url"></label></div>' +
-    '<div class="settings-actions"><div class="binding-summary"><span>目前授權狀態</span><strong id="bindingId">尚未設定</strong></div><button id="saveConfig" class="button secondary">儲存網址</button><label>Extension 顯示的六碼<input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair" class="button secondary">改綁產生六碼的 Extension</button></div><p id="boundExtensionId" class="hint"></p><p id="binding" class="hint"></p><p id="bridgeHeartbeat" class="hint"></p><p id="browserServiceId" class="hint"></p><p id="configStatus" class="feedback"></p></section>' +
+    '<div class="settings-actions"><div class="binding-summary"><span>目前授權狀態</span><strong id="bindingId">尚未設定</strong></div><label>Extension 顯示的六碼<input id="pairCode" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" size="8"></label><button id="pair" class="button secondary">改綁產生六碼的 Extension</button></div><p id="boundExtensionId" class="hint"></p><p id="bridgeHeartbeat" class="hint"></p><p id="browserServiceId" class="hint"></p><p id="configStatus" class="feedback"></p></section>' +
     '<section class="panel add-job"><div class="section-heading"><div><p class="eyebrow">QUEUE</p><h2>新增下載任務</h2></div><span class="section-note">同一 FQDN 會依序處理</span></div><form id="form"><input id="url" type="url" placeholder="貼上小說或漫畫作品網址" required><select id="kind"><option value="auto">自動判斷</option><option value="novel">小說</option><option value="manga">漫畫</option></select><button class="button primary">加入佇列</button></form><p id="status" class="feedback"></p></section>' +
     '<section class="queue-header"><div><p class="eyebrow">DOWNLOAD QUEUE</p><h2>工作佇列</h2></div><div class="queue-tools"><div id="stats" class="stats"></div><button id="clearFailed" class="button ghost">清除失敗與取消紀錄</button></div></section><section id="jobs" class="jobs" aria-live="polite"></section></main><script src="ui.js"></script></body></html>';
 }
@@ -216,7 +209,7 @@ function renderHtml(token) {
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
   if (request.method === 'GET' && url.pathname === '/healthz') {
-    return sendJson(response, 200, { ok: true, service: 'web-content-fetch', bridgeUrl: publicBinding(config).bridgeUrl, paired: orchestrator.paired });
+    return sendJson(response, 200, { ok: true, service: 'web-content-fetch', paired: orchestrator.paired });
   }
   if (request.method === 'GET' && url.pathname === '/ui.css') return serveStatic(response, 'ui.css', 'text/css; charset=utf-8');
   if (request.method === 'GET' && url.pathname === '/ui.js') return serveStatic(response, 'ui.js', 'text/javascript; charset=utf-8');
@@ -295,45 +288,11 @@ const server = http.createServer(async (request, response) => {
     request.on('close', () => subscribers.delete(response));
     return;
   }
-  if (request.method === 'POST' && url.pathname === '/api/config') {
-    if (!csrfAllowed(request)) return sendJson(response, 403, { error: 'csrf_forbidden' });
-    try {
-      const body = await readJson(request);
-      const nextBridgeUrl = normalizeBaseUrl(String(body.bridgeUrl || ''));
-      if (Object.hasOwn(body, 'callbackUrl') &&
-          validateCallbackUrl(String(body.callbackUrl || '')) !== config.callbackUrl) {
-        throw new Error('callback_url_managed_by_deployment');
-      }
-      if (body.activeBindingId && !getBinding(config, String(body.activeBindingId))) {
-        throw new Error('binding_not_found');
-      }
-      const binding = getBinding(config, body.activeBindingId ? String(body.activeBindingId) : '');
-      const bridgeChanged = Boolean(binding && binding.bridgeUrl !== nextBridgeUrl);
-      config.defaultBridgeUrl = nextBridgeUrl;
-      if (binding) {
-        if (bridgeChanged) {
-          binding.serviceCredential = '';
-          binding.browserClientId = '';
-          binding.expectedFingerprint = '';
-        }
-        binding.bridgeUrl = nextBridgeUrl;
-        binding.updatedAt = new Date().toISOString();
-        config.activeBindingId = binding.bindingId;
-      } else {
-        config.activeBindingId = null;
-      }
-      orchestrator.reconfigure(config);
-      await saveConfig(config);
-      return sendJson(response, 200, { binding: publicBinding(config), rebindRequired: bridgeChanged });
-    } catch (error) {
-      return sendJson(response, 422, { error: safeDiagnostic(error) });
-    }
-  }
   if (request.method === 'POST' && url.pathname === '/api/bridge/pair') {
     if (!csrfAllowed(request)) return sendJson(response, 403, { error: 'csrf_forbidden' });
     try {
       const body = await readJson(request);
-      const binding = await orchestrator.pair(body.code, { bridgeUrl: body.bridgeUrl, serviceClientId: body.serviceClientId });
+      const binding = await orchestrator.pair(body.code, { serviceClientId: body.serviceClientId });
       publish();
       return sendJson(response, 200, { binding });
     } catch (error) {

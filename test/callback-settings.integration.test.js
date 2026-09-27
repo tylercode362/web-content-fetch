@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
 const { spawn } = require('node:child_process');
+const { BRIDGE_URL, CALLBACK_URL } = require('../service-endpoints');
 
 async function freePort() {
   const server = net.createServer();
@@ -20,8 +21,19 @@ test('running settings page keeps the callback internal and deployment-owned', a
   const output = path.join(root, 'output');
   await fs.mkdir(state);
   await fs.writeFile(path.join(state, 'config.json'), JSON.stringify({
+    defaultBridgeUrl: 'http://192.168.50.140:8088/chrome-bridge',
     callbackUrl: 'http://host.docker.internal:8092/api/bridge/callback'
   }));
+  await fs.writeFile(path.join(state, 'jobs.json'), JSON.stringify([{
+    id: 'callback-contract-job',
+    url: 'https://tw.linovelib.com/novel/1/',
+    kind: 'novel',
+    status: 'paused',
+    callbackToken: 'callback-contract-token',
+    progress: { phase: 'paused', completed: 0, total: null },
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }]));
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ['server.js'], {
@@ -32,14 +44,15 @@ test('running settings page keeps the callback internal and deployment-owned', a
       WEB_CONTENT_FETCH_PORT: String(port),
       WEB_CONTENT_FETCH_STATE_DIR: state,
       WEB_CONTENT_FETCH_OUTPUT_DIR: output,
-      WEB_CONTENT_FETCH_CALLBACK_URL: 'http://web-content-fetch:8092/api/bridge/callback',
+      WEB_CONTENT_FETCH_BRIDGE_URL: 'http://127.0.0.1:8788',
+      WEB_CONTENT_FETCH_CALLBACK_URL: 'http://192.168.50.140:8088/callback',
       WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS: 'web-content-fetch,host.docker.internal'
     },
     stdio: 'ignore'
   });
   try {
     let healthy = false;
-    for (let attempt = 0; attempt < 60; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       if (child.exitCode !== null) break;
       try {
         healthy = (await fetch(base + '/healthz')).ok;
@@ -51,12 +64,20 @@ test('running settings page keeps the callback internal and deployment-owned', a
     const page = await fetch(base + '/');
     const html = await page.text();
     assert.doesNotMatch(html, /Callback URL|id="callbackUrl"|callbackDelivery/);
+    assert.doesNotMatch(html, /Chrome Bridge 網址|id="bridgeUrl"|儲存網址/);
     const cookie = page.headers.get('set-cookie').split(';')[0];
     const token = html.match(/name="csrf-token" content="([^"]+)"/)[1];
     const stateResponse = await fetch(base + '/api/state');
     const statePayload = await stateResponse.json();
     assert.equal(Object.hasOwn(statePayload.binding, 'callbackUrl'), false);
     assert.equal(Object.hasOwn(statePayload.binding, 'callbackDeliveryUrl'), false);
+    assert.equal(Object.hasOwn(statePayload.binding, 'bridgeUrl'), false);
+    assert.equal(Object.hasOwn(statePayload.binding.bindings[0] || {}, 'bridgeUrl'), false);
+    const health = await (await fetch(base + '/healthz')).json();
+    assert.equal(Object.hasOwn(health, 'bridgeUrl'), false);
+    const migratedConfig = JSON.parse(await fs.readFile(path.join(state, 'config.json'), 'utf8'));
+    assert.equal(migratedConfig.defaultBridgeUrl, BRIDGE_URL);
+    assert.equal(migratedConfig.callbackUrl, CALLBACK_URL);
     const bridgeStatus = await fetch(base + '/api/bridge/status', { headers: { origin: base } });
     assert.equal(bridgeStatus.status, 200);
     assert.deepEqual(await bridgeStatus.json(), {
@@ -71,24 +92,31 @@ test('running settings page keeps the callback internal and deployment-owned', a
       'x-csrf-token': token,
       'content-type': 'application/json'
     };
-    const rejected = await fetch(base + '/api/config', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        bridgeUrl: 'http://host.docker.internal:8788',
-        callbackUrl: 'http://host.docker.internal:8092/api/bridge/callback'
-      })
-    });
-    assert.equal(rejected.status, 422);
-    assert.equal((await rejected.json()).error, 'callback_url_managed_by_deployment');
-    const accepted = await fetch(base + '/api/config', {
+    const configMutation = await fetch(base + '/api/config', {
       method: 'POST',
       headers,
       body: JSON.stringify({ bridgeUrl: 'http://host.docker.internal:8788' })
     });
-    assert.equal(accepted.status, 200);
-    const saved = JSON.parse(await fs.readFile(path.join(state, 'config.json'), 'utf8'));
-    assert.equal(saved.callbackUrl, 'http://web-content-fetch:8092/api/bridge/callback');
+    assert.equal(configMutation.status, 404);
+    assert.equal((await configMutation.json()).error, 'not_found');
+    const canonicalCallback = await fetch(base + '/api/bridge/callback', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer callback-contract-token',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ jobId: 'callback-contract-job', progress: { phase: 'bridge_callback' } })
+    });
+    assert.equal(canonicalCallback.status, 202);
+    const rejectedCallback = await fetch(base + '/api/bridge/callback', {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer wrong-token',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({ jobId: 'callback-contract-job' })
+    });
+    assert.equal(rejectedCallback.status, 403);
   } finally {
     child.kill();
     await new Promise(resolve => child.once('exit', resolve));

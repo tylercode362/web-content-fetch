@@ -1,5 +1,5 @@
 const crypto = require('node:crypto');
-const { normalizeBaseUrl } = require('./bridge-client');
+const { BRIDGE_URL, CALLBACK_URL } = require('./service-endpoints');
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -9,10 +9,8 @@ function isUuid(value) {
 
 function normalizeConfig(raw = {}, env = process.env) {
   const source = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
-  const defaultBridgeUrl = normalizeBaseUrl(
-    source.defaultBridgeUrl || source.bridgeUrl || env.WEB_CONTENT_FETCH_BRIDGE_URL || 'http://host.docker.internal:8788'
-  );
-  const callbackUrl = env.WEB_CONTENT_FETCH_CALLBACK_URL || source.callbackUrl;
+  const defaultBridgeUrl = BRIDGE_URL;
+  const callbackUrl = CALLBACK_URL;
   const validBindings = [];
   const seen = new Set();
   const inputBindings = Array.isArray(source.bindings) ? source.bindings : [];
@@ -58,7 +56,7 @@ function normalizeConfig(raw = {}, env = process.env) {
 function normalizeBinding(value, fallbackBridgeUrl) {
   return {
     bindingId: value.bindingId,
-    bridgeUrl: normalizeBaseUrl(value.bridgeUrl || fallbackBridgeUrl),
+    bridgeUrl: BRIDGE_URL,
     expectedFingerprint: String(value.expectedFingerprint || ''),
     serviceClientId: value.serviceClientId,
     serviceCredential: String(value.serviceCredential || ''),
@@ -82,7 +80,6 @@ function getBinding(config, bindingId) {
 function publicBindingProfile(binding) {
   return {
     bindingId: binding.bindingId,
-    bridgeUrl: binding.bridgeUrl,
     expectedFingerprint: binding.expectedFingerprint || null,
     serviceClientId: binding.serviceClientId,
     browserClientId: binding.browserClientId,
@@ -95,7 +92,6 @@ function publicBindingProfile(binding) {
 function publicBinding(config) {
   const active = getBinding(config);
   return {
-    bridgeUrl: active?.bridgeUrl || config.defaultBridgeUrl,
     activeBindingId: config.activeBindingId,
     serviceClientId: active?.serviceClientId || null,
     browserClientId: active?.browserClientId || null,
@@ -108,7 +104,7 @@ function publicBinding(config) {
 function applyBindingToJob(job, binding) {
   if (!binding) return job;
   job.bindingId = binding.bindingId;
-  job.bridgeUrl = binding.bridgeUrl;
+  job.bridgeUrl = BRIDGE_URL;
   job.browserClientId = binding.browserClientId;
   job.serviceClientId = binding.serviceClientId;
   return job;

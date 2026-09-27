@@ -1,4 +1,5 @@
 const crypto = require('node:crypto');
+const { BRIDGE_URL } = require('./service-endpoints');
 const {
   Handshake,
   Noise_25519_ChaChaPoly_BLAKE2s
@@ -70,7 +71,7 @@ class SecureSession {
 
 class BridgeClient {
   constructor(options = {}) {
-    this.baseUrl = normalizeBaseUrl(options.bridgeUrl || options.baseUrl || 'http://host.docker.internal:8788');
+    this.baseUrl = normalizeBaseUrl(options.bridgeUrl || options.baseUrl || BRIDGE_URL);
     this.expectedFingerprint = options.expectedFingerprint || '';
     this.serviceClientId = options.serviceClientId || crypto.randomUUID();
     this.serviceCredential = options.serviceCredential || '';

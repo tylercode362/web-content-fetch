@@ -9,12 +9,8 @@
   -InitializeRemoteConfig，明確傳送被忽略的本機 .env 到遠端 staging。
   腳本不會上傳 exports、EPUB、Secrets 或 Git 資料，也不會刪除 named volume。
 
-  NAS 端的 .env 必須預先存在，並使用同一台 NAS 上的服務位址：
-
-    WEB_CONTENT_FETCH_BRIDGE_URL=http://nas-bridge:8788
-    WEB_CONTENT_FETCH_CALLBACK_URL=http://web-content-fetch:8092/api/bridge/callback
-    WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS=host.docker.internal,web-content-fetch
-    WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS=http://<NAS_HOST>:8088
+  WCF 僅透過 Local Gateway 管理的 internal Docker networks 存取，
+  Bridge 與 callback 使用固定的 Compose service DNS，不需要 .env URL 設定。
 
 .EXAMPLE
   .\scripts\Deploy-Nas.ps1 -NasHost '<NAS 區網主機名或 IP>'
@@ -102,23 +98,6 @@ function Quote-RemoteArg([string]$Value) {
   return "'$Value'"
 }
 
-function Set-EnvValue([string]$Content, [string]$Name, [string]$Value) {
-  $lines = [Collections.Generic.List[string]]::new()
-  $found = $false
-  foreach ($line in ($Content -split "`r?`n")) {
-    if ($line -match ("^\s*" + [regex]::Escape($Name) + "\s*=")) {
-      $lines.Add("$Name=$Value")
-      $found = $true
-    } else {
-      $lines.Add($line)
-    }
-  }
-  if (-not $found) {
-    $lines.Add("$Name=$Value")
-  }
-  return (($lines -join [Environment]::NewLine).TrimEnd() + [Environment]::NewLine)
-}
-
 function Invoke-RemoteDeploy {
   param([Parameter(Mandatory = $true)][string]$Command)
   $sshArguments = @(
@@ -199,13 +178,7 @@ try {
 
   if ($InitializeRemoteConfig) {
     $temporaryConfig = Join-Path ([IO.Path]::GetTempPath()) "web-content-fetch-$runId-nas.env"
-    $configText = Get-Content -LiteralPath $localConfig -Raw
-    $configText = Set-EnvValue $configText 'WEB_CONTENT_FETCH_PORT' '8092'
-    $configText = Set-EnvValue $configText 'WEB_CONTENT_FETCH_BRIDGE_URL' 'http://nas-bridge:8788'
-    $configText = Set-EnvValue $configText 'WEB_CONTENT_FETCH_CALLBACK_URL' 'http://web-content-fetch:8092/api/bridge/callback'
-    $configText = Set-EnvValue $configText 'WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS' 'host.docker.internal,web-content-fetch'
-    $configText = Set-EnvValue $configText 'WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS' ("http://" + $NasHost + ":8088")
-    [IO.File]::WriteAllText($temporaryConfig, $configText, [Text.UTF8Encoding]::new($false))
+    Copy-Item -LiteralPath $localConfig -Destination $temporaryConfig
     $configToUpload = $temporaryConfig
     Write-Host '建立 NAS 專用環境設定副本；不修改本機 .env。' -ForegroundColor Cyan
   }
@@ -246,7 +219,7 @@ try {
   $remoteArguments = @(
     $remoteArchive, $archiveHash, $RemoteRoot, $ProjectName, $ComposeProject,
     $DockerPath, $ComposePath, $composePluginFlag, $runId, $remoteConfig,
-    $HealthTimeoutSeconds, $keepFlag, $NasHost
+    $HealthTimeoutSeconds, $keepFlag
   ) | ForEach-Object { Quote-RemoteArg $_ }
   $helperInvocation = "/bin/sh $(Quote-RemoteArg $remoteHelper) $($remoteArguments -join ' ')"
   $remoteCommand = if ($UseSudo) {

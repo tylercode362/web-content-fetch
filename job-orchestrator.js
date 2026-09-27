@@ -2,7 +2,8 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
-const { BridgeClient, normalizeBaseUrl } = require('./bridge-client');
+const { BridgeClient } = require('./bridge-client');
+const { BRIDGE_URL, CALLBACK_URL } = require('./service-endpoints');
 const { resolveCallbackUrl } = require('./callback-url');
 const { applyBindingToJob, getBinding, isUuid, publicBinding } = require('./binding-store');
 const { cleanBookTitle, writeMangaChapterEpub, writeNovelEpub } = require('./epub-writer');
@@ -207,9 +208,7 @@ class DownloadOrchestrator {
 
   async pair(code, options = {}) {
     if (!/^[0-9]{6}$/.test(String(code || ''))) throw new Error('pairing_code_invalid');
-    const bridgeUrl = normalizeBaseUrl(String(
-      options.bridgeUrl || this.config.defaultBridgeUrl || this.activeBinding?.bridgeUrl || ''
-    ));
+    const bridgeUrl = BRIDGE_URL;
     const now = new Date().toISOString();
     const requestedServiceClientId = String(options.serviceClientId || '');
     const previous = this.config.bindings?.[0] || null;
@@ -232,6 +231,7 @@ class DownloadOrchestrator {
     binding.expectedFingerprint = client.fingerprint || result.fingerprint || '';
     binding.updatedAt = new Date().toISOString();
     this.config.defaultBridgeUrl = bridgeUrl;
+    this.config.callbackUrl = CALLBACK_URL;
     this.config.bindings = [binding];
     this.config.bindingAliases = [...new Set([
       ...(this.config.bindingAliases || []),

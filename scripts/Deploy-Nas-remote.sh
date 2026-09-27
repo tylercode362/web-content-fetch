@@ -13,7 +13,6 @@ run_id="$9"
 incoming_config="${10}"
 health_timeout="${11}"
 keep_staging="${12}"
-nas_host="${13}"
 
 case "$remote_root" in
   /volume1/docker) ;;
@@ -26,9 +25,6 @@ esac
 case "$run_id" in
   [A-Za-z0-9._-]*) ;;
   *) echo "invalid run id" >&2; exit 2 ;;
-esac
-case "$nas_host" in
-  ''|*[!A-Za-z0-9._-]*) echo "invalid NAS host" >&2; exit 2 ;;
 esac
 case "$incoming_config" in
   none|/volume1/docker/.staging/*/.env) ;;
@@ -80,17 +76,6 @@ fi
 [ -f "$archive" ] || fail "deployment archive is missing"
 [ "$(sha256sum "$archive" | awk '{print $1}')" = "$archive_hash" ] || fail "deployment archive checksum mismatch"
 
-set_env_value() {
-  env_name="$1"
-  env_value="$2"
-  env_file="$3"
-  if grep -q "^${env_name}=" "$env_file"; then
-    sed -i "s|^${env_name}=.*|${env_name}=${env_value}|" "$env_file"
-  else
-    printf '%s=%s\n' "$env_name" "$env_value" >> "$env_file"
-  fi
-}
-
 mkdir -p "$stage_root" "$backup_root"
 tar -xf "$archive" -C "$stage_root"
 if [ -f "$remote_project/.env" ]; then
@@ -110,21 +95,21 @@ else
   [ -f "$stage_root/compose.nas.example.yaml" ] || fail "tracked compose.nas.example.yaml is missing"
   cp -p "$stage_root/compose.nas.example.yaml" "$stage_root/compose.nas.yaml"
 fi
-set_env_value WEB_CONTENT_FETCH_CALLBACK_URL 'http://web-content-fetch:8092/api/bridge/callback' "$stage_root/.env"
-set_env_value WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS 'host.docker.internal,web-content-fetch' "$stage_root/.env"
-set_env_value WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS "http://${nas_host}:8088" "$stage_root/.env"
 chmod 600 "$stage_root/.env"
 
 for required in compose.yaml compose.nas.yaml Dockerfile server.js; do
   [ -f "$stage_root/$required" ] || fail "staged source is missing $required"
 done
 
-if ! "$docker_bin" network inspect local-gateway-chrome-bridge >/dev/null 2>&1; then
-  fail "local-gateway-chrome-bridge is missing; deploy Local Gateway and Chrome Bridge first"
-fi
-if ! "$docker_bin" network inspect local-gateway-web-content-fetch >/dev/null 2>&1; then
-  "$docker_bin" network create local-gateway-web-content-fetch >/dev/null
-fi
+for network_name in local-gateway-chrome-bridge; do
+  if ! "$docker_bin" network inspect "$network_name" >/dev/null 2>&1; then
+    fail "$network_name is missing; deploy Local Gateway first"
+  fi
+  network_internal=$("$docker_bin" network inspect --format '{{.Internal}}' "$network_name")
+  if [ "$network_internal" != "true" ]; then
+    fail "$network_name exists but is not internal; refusing to replace or disconnect it automatically"
+  fi
+done
 
 if [ -f "$remote_project/compose.yaml" ]; then
   tar -cf "$backup_root/runtime-source.tar" -C "$remote_project" \
@@ -192,8 +177,25 @@ wait_http() {
   return 1
 }
 
-wait_http web-content-fetch "http://127.0.0.1:8092/healthz"
-wait_http local-gateway-web-content-fetch "http://127.0.0.1:8088/web-content-fetch/healthz"
+wait_container_healthy() {
+  deadline=$(( $(date +%s) + health_timeout ))
+  while [ "$(date +%s)" -lt "$deadline" ]; do
+    container_id=$(compose ps -q web-content-fetch 2>/dev/null || true)
+    if [ -n "$container_id" ]; then
+      health_status=$("$docker_bin" inspect --format '{{.State.Health.Status}}' "$container_id" 2>/dev/null || true)
+      if [ "$health_status" = "healthy" ]; then
+        echo "healthy: web-content-fetch container"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+  echo "health timeout: web-content-fetch container" >&2
+  return 1
+}
+
+wait_container_healthy
+wait_http local-gateway-chrome-bridge "http://127.0.0.1:8088/web-content-fetch/healthz"
 compose ps web-content-fetch
 
 rollback_needed=0

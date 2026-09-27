@@ -260,8 +260,7 @@
       className: 'job-identity hint',
       textContent: 'binding ' + (job.bindingId || '-') +
         ' · browser ' + (job.browserClientId || '-') +
-        ' · service ' + (job.serviceClientId || '-') +
-        ' · Bridge ' + (job.bridgeUrl || '-')
+        ' · service ' + (job.serviceClientId || '-')
     });
     return node('details', {
       className: 'job-card',
@@ -316,7 +315,7 @@
       ? binding.bindings[0]
       : binding;
     const bindingId = document.querySelector('#bindingId');
-    const key = (profile?.bindingId || '') + ':' + (binding.bridgeUrl || '') + ':' + (binding.browserClientId || '');
+    const key = (profile?.bindingId || '') + ':' + (binding.browserClientId || '');
     if (bridgeStatusKey !== key) {
       bridgeStatusKey = key;
       bridgeStatus = null;
@@ -329,7 +328,6 @@
       bridgeStatus === 'unavailable' ? '暫時無法驗證授權' : '已儲存設定，正在驗證';
     document.querySelector('#boundExtensionId').textContent = '目前綁定的 Extension UUID：' +
       (binding.browserClientId || '尚未綁定');
-    document.querySelector('#binding').textContent = 'Bridge 網址：' + (binding.bridgeUrl || '-');
     const heartbeat = document.querySelector('#bridgeHeartbeat');
     if (heartbeat) {
       const details = bridgeStatusDetails?.browserClientId === binding.browserClientId
@@ -416,7 +414,6 @@
       });
       if (!response.ok) throw new Error('state_http_' + response.status);
       const data = await response.json();
-      document.querySelector('#bridgeUrl').value = data.binding?.bridgeUrl || '';
       render(data);
       await checkBridgeStatus();
     } catch (error) {
@@ -471,28 +468,10 @@
     return payload;
   }
 
-  document.querySelector('#saveConfig').onclick = async () => {
-    try {
-      const payload = await responsePayload(await post('/api/config', {
-        bridgeUrl: document.querySelector('#bridgeUrl').value
-      }));
-      setFeedback('#configStatus', payload.rebindRequired
-        ? 'Bridge URL 已變更，請重新輸入六碼配對碼'
-        : '設定已儲存');
-      await refresh();
-    } catch (error) {
-      const messages = {
-        callback_url_managed_by_deployment: '回呼位址由服務自動管理'
-      };
-      setFeedback('#configStatus', messages[error.message] || error.message, true);
-    }
-  };
-
   document.querySelector('#pair').onclick = async () => {
     try {
       await responsePayload(await post('/api/bridge/pair', {
         code: document.querySelector('#pairCode').value,
-        bridgeUrl: document.querySelector('#bridgeUrl').value,
         serviceClientId: browserServiceId
       }));
       document.querySelector('#pairCode').value = '';

@@ -1,23 +1,16 @@
 # NAS 部署
 
-部署前請先在 NAS 啟動 Local Gateway 與 Chrome Bridge，讓
-local-gateway-chrome-bridge 已存在。首次部署可使用
+部署前請先在 NAS 啟動 Local Gateway 與 Chrome Bridge，讓兩個
+internal Docker networks 都已存在。首次部署可使用
 `-InitializeRemoteConfig` 明確傳送本機被忽略的 `.env`；後續部署會優先
 沿用 NAS 專案目錄內既有的 `.env`。`.env` 不會進入部署封裝或 Git。
 
-NAS `.env` 至少設定：
-
-    WEB_CONTENT_FETCH_BRIDGE_URL=http://nas-bridge:8788
-    WEB_CONTENT_FETCH_CALLBACK_URL=http://web-content-fetch:8092/api/bridge/callback
-    WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS=host.docker.internal,web-content-fetch
-    WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS=http://<NAS_HOST>:8088
-    WEB_CONTENT_FETCH_PORT=8092
-
-使用 `-InitializeRemoteConfig` 時，腳本會在暫存副本中將 Bridge 與 callback
-改成上述 NAS 位址，並依 `-NasHost` 設定 Gateway callback origin，不會改寫本機 `.env`。
-Callback URL 由服務依部署設定自動管理，網頁不提供輸入欄位，也不顯示此內部位址。
-NAS 上 Bridge 透過共用 Docker network 回呼 web-content-fetch 服務；
-瀏覽器使用的 Gateway 網址不會被誤當成容器內的回呼位址。
+WCF 不需要設定 Bridge URL、callback URL 或 host port。Bridge API 固定使用
+`http://nas-bridge:8788`，callback 固定使用
+`http://web-content-fetch:8092/api/bridge/callback`；兩者只在各自的
+internal Docker networks 內解析。`-InitializeRemoteConfig` 只會傳送本機
+`.env`，不會改寫它。部署會拒絕缺少或不是 internal 的 Gateway networks，
+並透過容器 health status 與 Gateway route 檢查服務，不依賴主機發布 8092。
 
 建議順序：
 

@@ -8,6 +8,7 @@ const sharp = require('sharp');
 const { BridgeClient, BridgeTransportError } = require('../bridge-client');
 const { normalizeConfig } = require('../binding-store');
 const { DownloadOrchestrator, isClearable } = require('../job-orchestrator');
+const { BRIDGE_URL } = require('../service-endpoints');
 
 test('batch cleanup policy selects failed and cancelled jobs only', () => {
   assert.deepEqual(['queued', 'running', 'paused', 'complete', 'cancelled', 'error'].filter(isClearable), ['cancelled', 'error']);
@@ -26,6 +27,11 @@ test('Bridge client keeps the supplied binding URL through construction and upda
   assert.equal(client.baseUrl, 'http://192.168.50.140:8088/chrome-bridge');
   client.update({ bridgeUrl: 'http://192.168.50.141:8088/chrome-bridge' });
   assert.equal(client.baseUrl, 'http://192.168.50.141:8088/chrome-bridge');
+});
+
+test('Bridge client defaults to the fixed Docker service endpoint', () => {
+  const client = new BridgeClient();
+  assert.equal(client.baseUrl, 'http://nas-bridge:8788');
 });
 
 test('saved Bridge credentials are verified without changing binding state', async () => {
@@ -91,7 +97,7 @@ test('pairing updates the single WCF Bridge binding', async () => {
   try {
     BridgeClient.prototype.pair = async function (code) {
       assert.equal(code, '123456');
-      assert.equal(this.baseUrl, 'http://192.168.50.140:8088/chrome-bridge');
+      assert.equal(this.baseUrl, BRIDGE_URL);
       assert.equal(this.serviceClientId, '22222222-2222-4222-8222-222222222222');
       this.serviceCredential = 'new-credential';
       this.browserClientId = '44444444-4444-4444-8444-444444444444';
@@ -134,7 +140,8 @@ test('pairing updates the single WCF Bridge binding', async () => {
     assert.equal(saved[0].bindings.length, 1);
     assert.ok(saved[0].bindingAliases.includes(oldBindingId));
     assert.equal(saved[0].activeBindingId, result.activeBindingId);
-    assert.equal(saved[0].bindings[0].bridgeUrl, 'http://192.168.50.140:8088/chrome-bridge');
+    assert.equal(saved[0].bindings[0].bridgeUrl, 'http://nas-bridge:8788');
+    assert.equal(Object.hasOwn(result, 'bridgeUrl'), false);
     assert.equal(pausedJob.browserClientId, '44444444-4444-4444-8444-444444444444');
     assert.equal(completeJob.browserClientId, '33333333-3333-4333-8333-333333333333');
   } finally {

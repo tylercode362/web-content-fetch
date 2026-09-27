@@ -56,6 +56,17 @@ if (-not $ConfirmDeploy) {
   return
 }
 
+foreach ($networkName in @('local-gateway-chrome-bridge')) {
+  $networkInternal = & docker network inspect --format '{{.Internal}}' $networkName 2>$null
+  if ($LASTEXITCODE -ne 0) {
+    Fail "必要 Docker network 不存在：$networkName；請先啟動 Local Gateway。"
+  }
+  if ([string]$networkInternal -ne 'true') {
+    Fail "必要 Docker network 必須是 internal：$networkName。"
+  }
+}
+Write-Host 'Local Gateway 的共用 internal network 已驗證。' -ForegroundColor Green
+
 if (-not $SkipBuild) {
   Write-Host '建立 web-content-fetch 映像。' -ForegroundColor Cyan
   Invoke-CheckedDocker ($composeArguments + @('build', $service))

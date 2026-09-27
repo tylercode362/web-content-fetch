@@ -1,6 +1,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { getBinding, normalizeConfig, publicBinding } = require('../binding-store');
+const { BRIDGE_URL, CALLBACK_URL } = require('../service-endpoints');
 
 const firstBindingId = '11111111-1111-4111-8111-111111111111';
 const secondBindingId = '22222222-2222-4222-8222-222222222222';
@@ -49,5 +50,32 @@ test('deployment callback overrides an obsolete saved callback', () => {
     { callbackUrl: 'http://host.docker.internal:8092/api/bridge/callback' },
     { WEB_CONTENT_FETCH_CALLBACK_URL: 'http://web-content-fetch:8092/api/bridge/callback' }
   );
-  assert.equal(config.callbackUrl, 'http://web-content-fetch:8092/api/bridge/callback');
+  assert.equal(config.callbackUrl, CALLBACK_URL);
+});
+
+test('legacy endpoint values migrate without rotating binding identity or credentials', () => {
+  const legacy = profile(
+    firstBindingId,
+    '33333333-3333-4333-8333-333333333333',
+    '44444444-4444-4444-8444-444444444444'
+  );
+  const config = normalizeConfig({
+    activeBindingId: firstBindingId,
+    defaultBridgeUrl: 'http://192.168.50.140:8088/chrome-bridge',
+    callbackUrl: 'http://host.docker.internal:8092/api/bridge/callback',
+    bindings: [legacy]
+  }, {
+    WEB_CONTENT_FETCH_BRIDGE_URL: 'http://host.docker.internal:8788',
+    WEB_CONTENT_FETCH_CALLBACK_URL: 'http://127.0.0.1:8092/api/bridge/callback'
+  });
+
+  assert.equal(config.defaultBridgeUrl, BRIDGE_URL);
+  assert.equal(config.callbackUrl, CALLBACK_URL);
+  assert.equal(config.bindings[0].bridgeUrl, BRIDGE_URL);
+  assert.equal(config.bindings[0].bindingId, firstBindingId);
+  assert.equal(config.bindings[0].serviceClientId, legacy.serviceClientId);
+  assert.equal(config.bindings[0].browserClientId, legacy.browserClientId);
+  assert.equal(config.bindings[0].serviceCredential, legacy.serviceCredential);
+  assert.equal(Object.hasOwn(publicBinding(config), 'bridgeUrl'), false);
+  assert.equal(Object.hasOwn(publicBinding(config).bindings[0], 'bridgeUrl'), false);
 });

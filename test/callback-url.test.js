@@ -1,73 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { validateCallbackUrl, resolveCallbackUrl } = require('../callback-url');
+const { CALLBACK_URL } = require('../service-endpoints');
 
-const env = {
-  WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS: 'http://192.168.50.140:8088',
-  WEB_CONTENT_FETCH_CALLBACK_URL: 'http://web-content-fetch:8092/api/bridge/callback',
-  WEB_CONTENT_FETCH_CALLBACK_ALLOWED_HOSTS: 'host.docker.internal,web-content-fetch'
-};
-
-test('keeps the configured Gateway route visible while Bridge receives the internal endpoint', () => {
-  const gatewayUrl = 'http://192.168.50.140:8088/web-content-fetch/api/bridge/callback';
-  assert.equal(
-    validateCallbackUrl(gatewayUrl, env),
-    gatewayUrl
-  );
-  assert.equal(
-    resolveCallbackUrl(gatewayUrl, env),
-    'http://web-content-fetch:8092/api/bridge/callback'
-  );
+test('callback always resolves to the WCF Docker service endpoint', () => {
+  assert.equal(validateCallbackUrl(CALLBACK_URL), CALLBACK_URL);
+  assert.equal(resolveCallbackUrl(CALLBACK_URL), CALLBACK_URL);
+  assert.equal(resolveCallbackUrl(), CALLBACK_URL);
 });
 
-test('accepts the configured in-network callback endpoint', () => {
-  assert.equal(
-    validateCallbackUrl('http://web-content-fetch:8092/api/bridge/callback', env),
-    'http://web-content-fetch:8092/api/bridge/callback'
-  );
-  assert.equal(
-    resolveCallbackUrl('http://web-content-fetch:8092/api/bridge/callback', env),
-    'http://web-content-fetch:8092/api/bridge/callback'
-  );
-});
-
-test('an approved alternate Gateway origin stays editable', () => {
-  const alternateEnv = {
-    ...env,
-    WEB_CONTENT_FETCH_CALLBACK_PROXY_ORIGINS: 'http://192.168.50.140:8088,https://books.example.test'
-  };
-  const gatewayUrl = 'https://books.example.test/web-content-fetch/api/bridge/callback';
-  assert.equal(validateCallbackUrl(gatewayUrl, alternateEnv), gatewayUrl);
-  assert.equal(resolveCallbackUrl(gatewayUrl, alternateEnv), env.WEB_CONTENT_FETCH_CALLBACK_URL);
-});
-
-test('keeps existing host-gateway callback settings readable during migration', () => {
-  assert.equal(
-    validateCallbackUrl('http://host.docker.internal:8092/api/bridge/callback', env),
+test('browser-visible callback URLs cannot replace the internal endpoint', () => {
+  assert.throws(() => validateCallbackUrl(
+    'http://192.168.50.140:8088/web-content-fetch/api/bridge/callback'
+  ), /callback_url_managed_by_service/);
+  assert.throws(() => resolveCallbackUrl(
     'http://host.docker.internal:8092/api/bridge/callback'
-  );
-});
+  ), /callback_url_managed_by_service/);
 
-test('rejects unconfigured proxy origins, unexpected paths, loopback and unallowlisted hosts', () => {
-  assert.throws(() => validateCallbackUrl(
-    'http://192.168.50.141:8088/web-content-fetch/api/bridge/callback', env
-  ), /callback_url_origin_forbidden/);
-  assert.throws(() => validateCallbackUrl(
-    'http://192.168.50.140:8088/other/api/bridge/callback', env
-  ), /callback_url_invalid/);
-  assert.throws(() => validateCallbackUrl(
-    'http://192.168.50.140:8088/web-content-fetch/api/bridge/callback/api/bridge/callback', env
-  ), /callback_url_invalid/);
-  assert.throws(() => validateCallbackUrl(
-    'http://127.0.0.1:8092/api/bridge/callback', env
-  ), /callback_url_must_be_reachable_from_bridge/);
-  assert.throws(() => validateCallbackUrl(
-    'http://untrusted.example/api/bridge/callback', env
-  ), /callback_url_host_forbidden/);
-  assert.throws(() => validateCallbackUrl(
-    'http://not-web-content-fetch.web-content-fetch:8092/api/bridge/callback', env
-  ), /callback_url_host_forbidden/);
-  assert.throws(() => validateCallbackUrl(
-    'ftp://web-content-fetch:8092/api/bridge/callback', { ...env, WEB_CONTENT_FETCH_CALLBACK_URL: 'ftp://web-content-fetch:8092/api/bridge/callback' }
-  ), /callback_url_invalid/);
 });
