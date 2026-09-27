@@ -199,9 +199,8 @@ wait_http local-gateway-chrome-bridge "http://127.0.0.1:8088/web-content-fetch/h
 compose ps web-content-fetch
 
 rollback_needed=0
-if [ "$keep_staging" = "0" ]; then
-  rm -rf "$run_root"
-else
-  echo "Staging retained at $run_root."
-fi
-echo "WCF deployment completed. Backup retained at $backup_root."
+for cleanup_root in "$remote_root/.staging" "$remote_root/.backups"; do
+  [ -d "$cleanup_root" ] || continue
+  find "$cleanup_root" -mindepth 1 -maxdepth 1 -name "$project-*" -exec rm -rf -- {} +
+done
+echo "WCF deployment completed. Obsolete project staging and source backups removed."
