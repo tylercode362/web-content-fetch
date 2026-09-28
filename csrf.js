@@ -41,8 +41,9 @@ function createCsrfStore(options = {}) {
       return constantTimeEqual(candidate, cookieToken);
     },
 
-    cookieHeader(token) {
-      return 'wcf_csrf=' + encodeURIComponent(String(token)) + '; HttpOnly; SameSite=Strict; Path=/';
+    cookieHeader(token, cookiePath = '/') {
+      const path = cookiePath === '/web-content-fetch/' ? cookiePath : '/';
+      return 'wcf_csrf=' + encodeURIComponent(String(token)) + '; HttpOnly; SameSite=Strict; Path=' + path;
     },
 
     size() {

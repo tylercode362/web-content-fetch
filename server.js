@@ -20,6 +20,13 @@ const subscribers = new Set();
 const csrfStore = createCsrfStore();
 const maxJobs = 256;
 
+function stripPublicPrefix(requestUrl, prefix = '/web-content-fetch') {
+  const url = new URL(requestUrl || '/', 'http://service.invalid');
+  if (url.pathname === prefix) url.pathname = '/';
+  else if (url.pathname.startsWith(`${prefix}/`)) url.pathname = url.pathname.slice(prefix.length);
+  return `${url.pathname}${url.search}`;
+}
+
 fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
 fs.mkdirSync(outputDir, { recursive: true, mode: 0o700 });
 const config = loadConfig();
@@ -137,6 +144,7 @@ function originAllowed(request) {
   const configured = process.env.WEB_CONTENT_FETCH_ALLOWED_ORIGIN || `http://127.0.0.1:${port}`;
   if (request.headers.origin) return request.headers.origin === configured;
   if (!['GET', 'HEAD'].includes(request.method)) return false;
+  if (request.headers['x-forwarded-prefix'] === '/web-content-fetch') return true;
   try {
     return request.headers.host === new URL(configured).host;
   } catch {
@@ -207,6 +215,9 @@ function renderHtml(token) {
 }
 
 const server = http.createServer(async (request, response) => {
+  const cookiePath = request.url === '/web-content-fetch' || request.url?.startsWith('/web-content-fetch/')
+    ? '/web-content-fetch/' : '/';
+  request.url = stripPublicPrefix(request.url);
   const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
   if (request.method === 'GET' && url.pathname === '/healthz') {
     return sendJson(response, 200, { ok: true, service: 'web-content-fetch', paired: orchestrator.paired });
@@ -218,7 +229,7 @@ const server = http.createServer(async (request, response) => {
     response.writeHead(200, {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
-      'Set-Cookie': csrfStore.cookieHeader(token),
+      'Set-Cookie': csrfStore.cookieHeader(token, cookiePath),
       'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'",
       'Referrer-Policy': 'no-referrer'
     });
@@ -273,7 +284,7 @@ const server = http.createServer(async (request, response) => {
   if (!originAllowed(request)) return sendJson(response, 403, { error: 'origin_forbidden' });
   if (request.method === 'GET' && url.pathname === '/api/csrf') {
     const token = csrfStore.issue();
-    return sendJson(response, 200, { csrfToken: token }, { 'Set-Cookie': csrfStore.cookieHeader(token) });
+    return sendJson(response, 200, { csrfToken: token }, { 'Set-Cookie': csrfStore.cookieHeader(token, cookiePath) });
   }
   if (request.method === 'GET' && url.pathname === '/api/bridge/status') {
     return sendJson(response, 200, await orchestrator.bindingStatus());
