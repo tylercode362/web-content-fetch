@@ -80,6 +80,11 @@ test('running settings page keeps the callback internal and deployment-owned', a
     assert.equal(migratedConfig.callbackUrl, CALLBACK_URL);
     const bridgeStatus = await fetch(base + '/api/bridge/status', { headers: { origin: base } });
     assert.equal(bridgeStatus.status, 200);
+    const forwardedStatus = await fetch(base + '/api/bridge/status', { headers: { origin: 'http://gateway.example:8088', host: 'gateway.example:8088', 'x-forwarded-host': 'gateway.example:8088', 'x-forwarded-proto': 'http', 'x-forwarded-prefix': '/web-content-fetch' } });
+    assert.equal(forwardedStatus.status, 200);
+    const rejectedOrigin = await fetch(base + '/api/bridge/status', { headers: { origin: 'http://attacker.example:8088', host: 'gateway.example:8088', 'x-forwarded-host': 'gateway.example:8088', 'x-forwarded-proto': 'http', 'x-forwarded-prefix': '/web-content-fetch' } });
+    assert.equal(rejectedOrigin.status, 403);
+    assert.equal((await rejectedOrigin.json()).error, 'origin_forbidden');
     assert.deepEqual(await bridgeStatus.json(), {
       status: 'not_configured',
       browserClientId: null,

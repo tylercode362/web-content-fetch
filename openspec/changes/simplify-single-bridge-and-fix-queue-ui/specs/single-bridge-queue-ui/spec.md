@@ -59,3 +59,29 @@ The service MUST retain exact Origin validation and CSRF protection while allowi
 - **GIVEN** a request has an origin outside the configured exact origin
 - **WHEN** it calls a mutating API
 - **THEN** the service MUST reject it even if a token header is present
+
+### Requirement: Gateway-proxied UI uses the public same-origin boundary
+
+The Web Content Fetch UI MUST keep service-to-service traffic on the dedicated
+Docker network, while browser UI/API requests MUST validate the exact public
+Gateway origin. The service MUST NOT use its container loopback address as the
+NAS UI origin. When the trusted Gateway forwards `/web-content-fetch/`, the
+service MAY derive the exact origin from the forwarded scheme and Host headers;
+an explicitly configured origin remains supported for deployments with a fixed
+public hostname.
+
+#### Scenario: NAS Gateway request is accepted
+
+- **GIVEN** the Gateway forwards `/web-content-fetch/` with a valid forwarded
+  scheme and Host
+- **WHEN** the browser sends a same-origin API request
+- **THEN** the request is accepted when its Origin exactly matches that public
+  Gateway origin
+- **AND** WCF-to-Bridge traffic continues to use Docker service DNS
+
+#### Scenario: Untrusted origin remains forbidden
+
+- **GIVEN** the request is forwarded through the WCF prefix
+- **WHEN** its Origin does not exactly match the forwarded public origin or an
+  explicitly configured origin
+- **THEN** the service MUST return `origin_forbidden`

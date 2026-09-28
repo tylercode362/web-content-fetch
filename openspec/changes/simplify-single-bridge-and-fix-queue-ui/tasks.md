@@ -21,3 +21,6 @@
 - [ ] Run Compose config, tests, dependency/privacy scans, and strict OpenSpec validation.
 - [ ] Verify through the Gateway that adding a job and terminal cleanup no longer returns `csrf_forbidden`.
 - [ ] Verify URL input width and one Bridge summary in Chrome without deleting existing user records.
+
+- [x] Derive the exact Gateway origin for proxied WCF requests without using a container loopback origin.
+- [x] Add regression coverage for accepted and rejected forwarded Origins.

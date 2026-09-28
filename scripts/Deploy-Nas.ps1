@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   這是 WCF 專用的 NAS 部署入口。預設只驗證 Compose 並顯示目標；
-  只有指定 -ConfirmDeploy 才會建立 staging、備份遠端來源、建置並替換
+  只有指定 -ConfirmDeploy 才會建立 staging、保留設定 recovery 資料、建置並替換
   web-content-fetch。預設不會上傳 .env；首次部署可另外指定
   -InitializeRemoteConfig，明確傳送被忽略的本機 .env 到遠端 staging。
   腳本不會上傳 exports、EPUB、Secrets 或 Git 資料，也不會刪除 named volume。

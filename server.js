@@ -140,16 +140,36 @@ function drain() {
   void orchestrator.drain().catch(error => console.error(safeDiagnostic(error)));
 }
 
-function originAllowed(request) {
-  const configured = process.env.WEB_CONTENT_FETCH_ALLOWED_ORIGIN || `http://127.0.0.1:${port}`;
-  if (request.headers.origin) return request.headers.origin === configured;
-  if (!['GET', 'HEAD'].includes(request.method)) return false;
-  if (request.headers['x-forwarded-prefix'] === '/web-content-fetch') return true;
+function normalizeOrigin(value) {
   try {
-    return request.headers.host === new URL(configured).host;
+    const parsed = new URL(String(value || '').trim());
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password ||
+      parsed.pathname !== '/' || parsed.search || parsed.hash) return '';
+    return parsed.origin;
   } catch {
-    return false;
+    return '';
   }
+}
+
+function forwardedGatewayOrigin(request) {
+  if (request.headers['x-forwarded-prefix'] !== '/web-content-fetch') return '';
+  const protocol = String(request.headers['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  if (!['http', 'https'].includes(protocol)) return '';
+  const forwardedHost = String(request.headers['x-forwarded-host'] || request.headers.host || '').trim();
+  return normalizeOrigin(`${protocol}://${forwardedHost}`);
+}
+
+function originAllowed(request) {
+  const configured = normalizeOrigin(process.env.WEB_CONTENT_FETCH_ALLOWED_ORIGIN);
+  const forwarded = forwardedGatewayOrigin(request);
+  const hasGatewayPrefix = request.headers['x-forwarded-prefix'] === '/web-content-fetch';
+  const expected = new Set([configured, forwarded].filter(Boolean));
+  if (!configured && !forwarded && !hasGatewayPrefix) expected.add(`http://127.0.0.1:${port}`);
+  if (request.headers.origin) return expected.has(request.headers.origin);
+  if (!['GET', 'HEAD'].includes(request.method)) return false;
+  if (hasGatewayPrefix) return expected.size > 0;
+  if (configured) return request.headers.host === new URL(configured).host;
+  return request.headers.host === `127.0.0.1:${port}` || request.headers.host === `[::1]:${port}`;
 }
 
 function parseCookies(request) {

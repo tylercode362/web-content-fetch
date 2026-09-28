@@ -20,6 +20,8 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       WEB_CONTENT_FETCH_BIND_HOST: 0.0.0.0
+      # Optional fixed public UI origin; Gateway forwarding is used when unset.
+      WEB_CONTENT_FETCH_ALLOWED_ORIGIN: ${WEB_CONTENT_FETCH_ALLOWED_ORIGIN:-}
       WEB_CONTENT_FETCH_PORT: 8092
       WEB_CONTENT_FETCH_STATE_DIR: /var/lib/web-content-fetch/state
       WEB_CONTENT_FETCH_OUTPUT_DIR: /var/lib/web-content-fetch/output
