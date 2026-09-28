@@ -8,6 +8,7 @@ The NAS deployer SHALL remove project-owned obsolete deployment artifacts only a
 
 - **WHEN** staging validation, build, cutover, container health, and Gateway health succeed
 - **THEN** obsolete Web Content Fetch staging and source backups are removed
+- **AND** stale packaged source, orphan containers, and project-labelled dangling images are removed
 - **AND** configuration, exported content, volumes, and user data remain intact
 
 #### Scenario: Failed deployment

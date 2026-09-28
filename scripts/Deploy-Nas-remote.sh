@@ -148,12 +148,15 @@ trap on_exit EXIT
 
 rollback_needed=1
 mkdir -p "$remote_project"
+for source_path in docs openspec scripts test .dockerignore .env.example .gitattributes .gitignore AGENTS.md binding-store.js bridge-client.js callback-url.js compose.nas.example.yaml compose.yaml csrf.js Dockerfile epub-writer.js job-orchestrator.js job-view.js package-lock.json package.json server.js service-endpoints.js ui.css ui.js; do
+  rm -rf -- "$remote_project/$source_path"
+done
 tar -xf "$archive" -C "$remote_project"
 cp -p "$stage_root/compose.nas.yaml" "$remote_project/compose.nas.yaml"
 cp -p "$stage_root/.env" "$remote_project/.env"
 
 echo "Recreating web-content-fetch."
-compose up -d --build --force-recreate web-content-fetch
+compose up -d --build --force-recreate --remove-orphans web-content-fetch
 
 http_ok() {
   if command -v curl >/dev/null 2>&1; then
@@ -203,4 +206,5 @@ for cleanup_root in "$remote_root/.staging" "$remote_root/.backups"; do
   [ -d "$cleanup_root" ] || continue
   find "$cleanup_root" -mindepth 1 -maxdepth 1 -name "$project-*" -exec rm -rf -- {} +
 done
+"$docker_bin" image prune -f --filter "label=com.docker.compose.project=$compose_project" >/dev/null
 echo "WCF deployment completed. Obsolete project staging and source backups removed."
