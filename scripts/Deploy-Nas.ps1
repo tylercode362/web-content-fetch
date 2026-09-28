@@ -44,6 +44,8 @@ param(
 
   [string]$IdentityFile = (Join-Path $env:USERPROFILE '.ssh\synology_925'),
 
+  [Security.SecureString]$NasPassword,
+
   [ValidatePattern('^/volume1/docker$')]
   [string]$RemoteRoot = '/volume1/docker',
 
@@ -68,6 +70,39 @@ Set-StrictMode -Version Latest
 
 function Fail([string]$Message) {
   throw "WCF NAS 部署停止：$Message"
+}
+
+function Get-NasPassword {
+  if ($null -ne $NasPassword) {
+    if ($NasPassword.Length -eq 0) { Fail 'NAS sudo 密碼不可為空白。' }
+    return $NasPassword
+  }
+  $value = Read-Host 'NAS sudo 密碼' -AsSecureString
+  if ($value.Length -eq 0) { Fail 'NAS sudo 密碼不可為空白。' }
+  return $value
+}
+
+function ConvertFrom-SecureInput {
+  param([Parameter(Mandatory = $true)][Security.SecureString]$Value)
+  $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+  try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
+  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+}
+
+function Assert-NasSudo {
+  $plain = ConvertFrom-SecureInput (Get-NasPassword)
+  $sshArguments = @(
+    '-tt', '-i', $IdentityFile, '-p', $NasPort.ToString(),
+    '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new',
+    ("{0}@{1}" -f $NasUser, $NasHost), "sudo -k -S -p '' -v"
+  )
+  try {
+    $plain | & ssh @sshArguments | Out-Null
+    if ($LASTEXITCODE -ne 0) { Fail "NAS sudo 密碼驗證失敗（exit code $LASTEXITCODE）。" }
+  } finally {
+    $plain = $null
+  }
+  Write-Host 'NAS sudo 密碼驗證完成；後續部署不會再次詢問。' -ForegroundColor Green
 }
 
 function Invoke-CheckedNative {
@@ -113,8 +148,21 @@ function Invoke-RemoteDeploy {
   } else {
     $sshArguments += @('-T', '-o', 'BatchMode=yes')
   }
+  $requiresSudo = $UseSudo -and $Command.StartsWith('sudo -n ', [StringComparison]::Ordinal)
+  if ($requiresSudo) {
+    $Command = "sudo -S -p '' -v && $Command"
+  }
   $sshArguments += @(("{0}@{1}" -f $NasUser, $NasHost), $Command)
-  & ssh @sshArguments
+  if ($requiresSudo) {
+    $plain = ConvertFrom-SecureInput $NasPassword
+    try {
+      $plain | & ssh @sshArguments
+    } finally {
+      $plain = $null
+    }
+  } else {
+    & ssh @sshArguments
+  }
   if ($LASTEXITCODE -ne 0) {
     Fail '遠端部署命令失敗；staging 與 recovery 資料會保留供檢查。'
   }
@@ -137,6 +185,8 @@ if (-not (Test-Path -LiteralPath $IdentityFile -PathType Leaf)) {
 }
 $IdentityFile = (Resolve-Path -LiteralPath $IdentityFile).Path
 $localConfig = Join-Path $localRoot '.env'
+$NasPassword = Get-NasPassword
+if ($UseSudo) { Assert-NasSudo }
 if ($InitializeRemoteConfig -and -not (Test-Path -LiteralPath $localConfig -PathType Leaf)) {
   Fail '-InitializeRemoteConfig 需要本機被忽略的 .env 檔案。'
 }
@@ -227,13 +277,13 @@ try {
   ) | ForEach-Object { Quote-RemoteArg $_ }
   $helperInvocation = "/bin/sh $(Quote-RemoteArg $remoteHelper) $($remoteArguments -join ' ')"
   $remoteCommand = if ($UseSudo) {
-    "sudo -p '[NAS sudo] Password: ' -v && sudo -n $helperInvocation"
+    "sudo -n $helperInvocation"
   } else {
     $helperInvocation
   }
 
   if ($UseSudo) {
-    Write-Host 'NAS 遠端操作將在同一個 SSH session 執行；只會要求一次 sudo 密碼。' -ForegroundColor Yellow
+    Write-Host 'NAS 遠端操作使用部署開始時驗證的 sudo 密碼；後續不會再次詢問。' -ForegroundColor Yellow
   } else {
     Write-Host 'NAS 遠端操作使用目前 SSH 使用者權限。' -ForegroundColor Yellow
   }
