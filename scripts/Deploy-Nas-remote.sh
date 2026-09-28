@@ -112,8 +112,6 @@ for network_name in local-gateway-chrome-bridge; do
 done
 
 if [ -f "$remote_project/compose.yaml" ]; then
-  tar -cf "$backup_root/runtime-source.tar" -C "$remote_project" \
-    --exclude=.env --exclude=exports --exclude='*.epub' --exclude='*.zip' .
   cp -p "$remote_project/.env" "$backup_root/.env"
   [ ! -f "$remote_project/compose.nas.yaml" ] || cp -p "$remote_project/compose.nas.yaml" "$backup_root/compose.nas.yaml"
 fi
@@ -124,15 +122,14 @@ compose build web-content-fetch
 rollback_needed=0
 rollback() {
   if [ "$rollback_needed" -ne 1 ]; then return 0; fi
-  echo "Deployment failed; attempting rollback from $backup_root." >&2
+  echo "Deployment failed; restoring configuration from $backup_root. Program source rollback is Git-based." >&2
   set +e
-  if [ -f "$backup_root/runtime-source.tar" ]; then
-    tar -xf "$backup_root/runtime-source.tar" -C "$remote_project"
+  if [ -f "$backup_root/.env" ]; then
     cp -p "$backup_root/.env" "$remote_project/.env"
     [ ! -f "$backup_root/compose.nas.yaml" ] || cp -p "$backup_root/compose.nas.yaml" "$remote_project/compose.nas.yaml"
     compose_file="$remote_project/compose.yaml"
     nas_compose_file="$remote_project/compose.nas.yaml"
-    compose up -d --build --force-recreate web-content-fetch
+    compose up -d --force-recreate web-content-fetch
   fi
   set -e
 }
@@ -207,4 +204,4 @@ for cleanup_root in "$remote_root/.staging" "$remote_root/.backups"; do
   find "$cleanup_root" -mindepth 1 -maxdepth 1 -name "$project-*" -exec rm -rf -- {} +
 done
 "$docker_bin" image prune -f --filter "label=com.docker.compose.project=$compose_project" >/dev/null
-echo "WCF deployment completed. Obsolete project staging and source backups removed."
+echo "WCF deployment completed. Obsolete project staging removed."

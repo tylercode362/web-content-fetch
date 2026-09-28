@@ -15,10 +15,11 @@ test('successful NAS deployment cleans only project-owned deployment artifacts',
   assert.match(script.slice(cleanup), /-name "\$project-\*"/);
 });
 
-test('failed NAS deployment retains staging and rollback source', () => {
+test('failed NAS deployment retains staging without a program source backup', () => {
   const rollback = script.slice(script.indexOf('rollback() {'), script.indexOf('trap on_exit EXIT'));
 
   assert.doesNotMatch(rollback, /for cleanup_root in/);
-  assert.match(rollback, /runtime-source\.tar/);
+  assert.doesNotMatch(rollback, /runtime-source\.tar/);
+  assert.match(rollback, /Program source rollback is Git-based/);
   assert.match(rollback, /Staging retained/);
 });
