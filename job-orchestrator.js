@@ -74,17 +74,18 @@ class DownloadOrchestrator {
       const pageUrl = new URL(String(item.pageUrl || context.chapterUrl));
       const width = Number(item.width);
       const height = Number(item.height);
+      const hasDimensions = Number.isFinite(width) && Number.isFinite(height) &&
+        Number.isInteger(width) && Number.isInteger(height) && width > 0 && height > 0;
+      const hasPartialDimensions = item.width !== undefined || item.height !== undefined;
       if (!['http:', 'https:'].includes(url.protocol) ||
           !['http:', 'https:'].includes(pageUrl.protocol) || pageUrl.origin !== chapterUrl.origin ||
-          !Number.isInteger(width) || width < 1 || width > 100_000 ||
-          !Number.isInteger(height) || height < 1 || height > 100_000) {
+          (hasPartialDimensions && (!hasDimensions || width > 100_000 || height > 100_000))) {
         throw new Error('novel_image_callback_invalid');
       }
       return {
         url: url.href,
         pageUrl: pageUrl.href,
-        width,
-        height,
+        ...(hasDimensions ? { width, height } : {}),
         alt: typeof item.alt === 'string' ? item.alt.slice(0, 500) : ''
       };
     });

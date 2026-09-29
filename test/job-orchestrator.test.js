@@ -740,8 +740,6 @@ test('novel image batches resume from ordered callback checkpoints after a parti
         const evidence = imageUrls.map((url, index) => ({
           url,
           pageUrl: chapterUrl,
-          width: 40,
-          height: 60,
           alt: '插圖 ' + (index + 1)
         }));
         const result = await orchestrator.registerNovelImagesCallback(job.id, {
