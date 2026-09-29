@@ -92,11 +92,11 @@ function ConvertFrom-SecureInput {
 function Assert-NasSudo {
   $plain = ConvertFrom-SecureInput (Get-NasPassword)
   $sshArguments = @(
-    # A PTY echoes piped stdin; use a non-PTY SSH session while sending sudo
-    # credentials so the password never appears in the PowerShell terminal.
-    '-T', '-i', $IdentityFile, '-p', $NasPort.ToString(),
+    # Synology sudo requires a PTY; disable echo before feeding stdin so the
+    # password is accepted without appearing in the PowerShell terminal.
+    '-tt', '-i', $IdentityFile, '-p', $NasPort.ToString(),
     '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new',
-    ("{0}@{1}" -f $NasUser, $NasHost), "sudo -k -S -p '' -v"
+    ("{0}@{1}" -f $NasUser, $NasHost), "stty -echo; trap 'stty echo 2>/dev/null || true' 0; sudo -k -S -p '' -v"
   )
   try {
     $plain | & ssh @sshArguments | Out-Null
@@ -147,10 +147,10 @@ function Invoke-RemoteDeploy {
   )
   $requiresSudo = $UseSudo -and $Command.StartsWith('sudo -n ', [StringComparison]::Ordinal)
   if ($requiresSudo) {
-    $Command = "sudo -S -p '' -v && $Command"
-    $sshArguments += '-T'
+    $Command = "stty -echo; trap 'stty echo 2>/dev/null || true' 0; sudo -S -p '' -v && $Command"
+    $sshArguments += '-tt'
   } elseif ($UseSudo) {
-    $sshArguments += '-T'
+    $sshArguments += '-tt'
   } else {
     $sshArguments += @('-T', '-o', 'BatchMode=yes')
   }
