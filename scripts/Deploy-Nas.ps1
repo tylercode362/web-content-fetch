@@ -92,7 +92,9 @@ function ConvertFrom-SecureInput {
 function Assert-NasSudo {
   $plain = ConvertFrom-SecureInput (Get-NasPassword)
   $sshArguments = @(
-    '-tt', '-i', $IdentityFile, '-p', $NasPort.ToString(),
+    # A PTY echoes piped stdin; use a non-PTY SSH session while sending sudo
+    # credentials so the password never appears in the PowerShell terminal.
+    '-T', '-i', $IdentityFile, '-p', $NasPort.ToString(),
     '-o', 'ConnectTimeout=10', '-o', 'StrictHostKeyChecking=accept-new',
     ("{0}@{1}" -f $NasUser, $NasHost), "sudo -k -S -p '' -v"
   )
@@ -143,14 +145,14 @@ function Invoke-RemoteDeploy {
     '-o', 'ServerAliveCountMax=4',
     '-o', 'StrictHostKeyChecking=accept-new'
   )
-  if ($UseSudo) {
-    $sshArguments += '-tt'
-  } else {
-    $sshArguments += @('-T', '-o', 'BatchMode=yes')
-  }
   $requiresSudo = $UseSudo -and $Command.StartsWith('sudo -n ', [StringComparison]::Ordinal)
   if ($requiresSudo) {
     $Command = "sudo -S -p '' -v && $Command"
+    $sshArguments += '-T'
+  } elseif ($UseSudo) {
+    $sshArguments += '-T'
+  } else {
+    $sshArguments += @('-T', '-o', 'BatchMode=yes')
   }
   $sshArguments += @(("{0}@{1}" -f $NasUser, $NasHost), $Command)
   if ($requiresSudo) {
