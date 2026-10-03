@@ -62,6 +62,8 @@ param(
   [switch]$InitializeRemoteConfig,
   [switch]$SkipLocalComposeValidation,
   [switch]$KeepStaging,
+  [string]$RepositorySetupModule = (Join-Path $PSScriptRoot '..\..\local-gateway\scripts\Repository-DeploySetup.psm1'),
+  [switch]$RepositoryNonInteractive,
   [switch]$ConfirmDeploy
 )
 
@@ -188,6 +190,33 @@ if (-not (Test-Path -LiteralPath $IdentityFile -PathType Leaf)) {
 $IdentityFile = (Resolve-Path -LiteralPath $IdentityFile).Path
 $localConfig = Join-Path $localRoot '.env'
 $NasPassword = Get-NasPassword
+
+# Trust and repository-key preflight must complete before validation, packaging,
+# upload, staging, or service cutover. This only verifies/sets up read-only access;
+# it never enables or starts updater polling.
+$modulePath = [IO.Path]::GetFullPath($RepositorySetupModule)
+if (-not (Test-Path -LiteralPath $modulePath -PathType Leaf)) {
+  Fail "Shared repository setup module is missing: $modulePath"
+}
+Import-Module -Name $modulePath -Force -ErrorAction Stop
+$repositoryHostSetup = @{
+  Project = 'web-content-fetch'
+  NasHost = $NasHost
+  NasUser = $NasUser
+  NasPort = $NasPort
+  IdentityFile = $IdentityFile
+  NasPassword = $NasPassword
+  UseSudo = [bool]$UseSudo
+  DockerPath = $DockerPath
+  ComposePath = $ComposePath
+  ComposePlugin = [bool]$ComposePlugin
+  NonInteractive = [bool]$RepositoryNonInteractive
+}
+Initialize-NasRepositoryHostPin @repositoryHostSetup
+$repositorySetup = $repositoryHostSetup.Clone()
+$repositorySetup.Repository = 'tylercode362/web-content-fetch'
+Invoke-NasRepositorySetup @repositorySetup
+
 if ($UseSudo) { Assert-NasSudo }
 if ($InitializeRemoteConfig -and -not (Test-Path -LiteralPath $localConfig -PathType Leaf)) {
   Fail '-InitializeRemoteConfig 需要本機被忽略的 .env 檔案。'
