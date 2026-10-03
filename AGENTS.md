@@ -42,3 +42,13 @@
 - Docker build、healthcheck、Bridge binding、進度串流 reconnect 與 EPUB fixture 必須分開記錄證據。
 - 測試使用 synthetic fixture；不得依賴個人登入、私人網站或真實 credential。
 - 針對真實網站的瀏覽器驗證只使用使用者已登入的 Chrome Extension；不複製 profile、不擷取 cookie，且不得把 loopback callback 位址交給 Docker 外的 Bridge。
+
+## 中文寫作與技術文件
+
+- 自行撰寫的中文一律使用臺灣繁體中文與臺灣慣用詞，禁止簡體中文與中國用語；採用自然中文語序與精確、一致的術語。
+- 保留條件、否定、例外、數量、單位與不確定性，不為簡短而改變原意或刪除必要邏輯。
+- 精確區分已修改、已測試、已提交、已推送與已部署；只陳述證據支持的完成狀態。
+- 保留程式識別字、命令、路徑、結構化欄位、原始資料值與須逐字引用的來源；未經要求，不批次改寫專案、不翻譯既有其他語言文件，也不變更程式行為。
+- 撰寫或修訂技術規格、README、操作程序、驗收與審查報告，或需要改善清晰度與術語一致性的實質改寫時，必要時自動啟用 write-taiwan-technical-chinese 技能；一般閒聊與簡短回覆不必啟用。不固定公告啟用，既有通知與安靜時段規則優先。
+
+- 完整技能與自動啟用設定見 [write-taiwan-technical-chinese](.agents/skills/write-taiwan-technical-chinese/SKILL.md)。

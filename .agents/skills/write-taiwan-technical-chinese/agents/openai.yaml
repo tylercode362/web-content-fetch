@@ -1,0 +1,6 @@
+interface:
+  display_name: "臺灣繁體中文技術寫作"
+  short_description: "以臺灣繁體中文撰寫技術文件，保留條件、證據與操作邏輯"
+  default_prompt: "請使用 $write-taiwan-technical-chinese，將這份技術文件改寫為清楚、精確且用語一致的臺灣繁體中文。"
+policy:
+  allow_implicit_invocation: true
