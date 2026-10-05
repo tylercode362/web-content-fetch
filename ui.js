@@ -540,8 +540,11 @@
       if (action === 'delete') {
         if (payload.deleted !== true || payload.jobId !== id) throw new Error('delete_not_confirmed');
         setFeedback('#status', '已刪除工作與 ' + (payload.removedOutputs || 0) + ' 個輸出檔案');
+      } else if (action === 'cancel') {
+        setFeedback('#status', payload.job?.status === 'cancelled' ? '工作已取消，相關檔案已清除' :
+          payload.job?.status === 'cancelling' ? '取消請求已送出，等待工作取消與檔案清理完成' : '取消尚未確認，請查看工作狀態');
       } else {
-        setFeedback('#status', action === 'cancel' ? '工作已取消，相關檔案已清除' : '工作操作完成');
+        setFeedback('#status', '工作操作完成');
       }
     } catch (error) {
       setFeedback('#status', '操作失敗：' + error.message, true);
