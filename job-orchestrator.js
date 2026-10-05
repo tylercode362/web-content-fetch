@@ -553,7 +553,11 @@ class DownloadOrchestrator {
     const job = this.jobs.get(jobId);
     if (!job) return null;
     if (isTerminal(job.status)) return job;
-    if (job.status === 'queued' || job.status === 'paused') {
+    if (job.status === 'queued' || job.status === 'paused' ||
+        (job.status === 'cancelling' && !this.runningJobs.has(job.id))) {
+      job.cancelRequested = true;
+      job.pauseRequested = false;
+      this.update(job, { status: 'cancelling', progress: { ...(job.progress || {}), phase: 'cancelling' } });
       await this.removeJobFiles(job);
       await this.removePublishedOutputs(job);
       this.update(job, {
@@ -1178,3 +1182,4 @@ module.exports = {
   isTerminal,
   isClearable
 };
+

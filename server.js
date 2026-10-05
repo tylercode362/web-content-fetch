@@ -8,6 +8,7 @@ const { DownloadOrchestrator, publicBinding, safeDiagnostic, isClearable } = req
 const { applyBindingToJob, getBinding, normalizeConfig } = require('./binding-store');
 const { publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('./job-view');
 const { createCsrfStore } = require('./csrf');
+const { recoverJobState } = require('./restart-policy');
 
 const host = process.env.WEB_CONTENT_FETCH_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.WEB_CONTENT_FETCH_PORT || 8092);
@@ -54,14 +55,7 @@ function loadJobs() {
       if (!job || typeof job.id !== 'string') continue;
       const binding = getBinding(config, job.bindingId);
       if (binding) applyBindingToJob(job, binding);
-      if (job.status === 'running' || job.status === 'pausing' || job.status === 'cancelling') {
-        job.status = 'queued';
-        job.diagnostic = 'recovered_after_restart';
-        job.pauseRequested = false;
-        job.cancelRequested = false;
-        job.bridgeProgress = null;
-        job.progress = { ...(job.progress || {}), phase: 'queued' };
-      }
+      recoverJobState(job);
       jobs.set(job.id, job);
     }
   } catch (error) {
@@ -234,11 +228,21 @@ function renderHtml(token) {
     '<section class="queue-header"><div><p class="eyebrow">DOWNLOAD QUEUE</p><h2>工作佇列</h2></div><div class="queue-tools"><div id="stats" class="stats"></div><button id="clearFailed" class="button ghost">清除失敗與取消紀錄</button></div></section><section id="jobs" class="jobs" aria-live="polite"></section></main><script src="ui.js"></script></body></html>';
 }
 
-const server = http.createServer(async (request, response) => {
+const server = http.createServer((request, response) => {
+  void handleRequest(request, response).catch(() => {
+    if (response.headersSent) response.destroy();
+    else if (!response.writableEnded) sendJson(response, 500, { error: 'internal_error' });
+  });
+});
+
+async function handleRequest(request, response) {
   const cookiePath = request.url === '/web-content-fetch' || request.url?.startsWith('/web-content-fetch/')
     ? '/web-content-fetch/' : '/';
-  request.url = stripPublicPrefix(request.url);
-  const url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
+  let url;
+  try {
+    request.url = stripPublicPrefix(request.url);
+    url = new URL(request.url || '/', `http://${request.headers.host || '127.0.0.1'}`);
+  } catch { return sendJson(response, 400, { error: 'url_invalid' }); }
   if (request.method === 'GET' && url.pathname === '/healthz') {
     return sendJson(response, 200, { ok: true, service: 'web-content-fetch', paired: orchestrator.paired });
   }
@@ -427,9 +431,14 @@ const server = http.createServer(async (request, response) => {
     if (!job) return sendJson(response, 404, { error: 'job_not_found' });
     return downloadAll(response, job);
   }
-  if (request.method === 'GET' && url.pathname.startsWith('/downloads/')) return downloadOutput(response, decodeURIComponent(url.pathname.slice('/downloads/'.length)));
+  if (request.method === 'GET' && url.pathname.startsWith('/downloads/')) {
+    let relativeName;
+    try { relativeName = decodeURIComponent(url.pathname.slice('/downloads/'.length)); }
+    catch { return sendJson(response, 400, { error: 'output_invalid' }); }
+    return downloadOutput(response, relativeName);
+  }
   return sendJson(response, 404, { error: 'not_found' });
-});
+}
 
 async function downloadOutput(response, relativeName) {
   if (!/^[\p{L}\p{N}._/-]+$/u.test(relativeName) || relativeName.includes('..')) return sendJson(response, 400, { error: 'output_invalid' });
@@ -439,7 +448,7 @@ async function downloadOutput(response, relativeName) {
   try {
     const stat = await fsp.stat(filePath);
     if (!stat.isFile() || stat.size > 512 * 1024 * 1024) return sendJson(response, 404, { error: 'output_not_found' });
-    response.writeHead(200, { 'Content-Type': 'application/epub+zip', 'Content-Length': stat.size, 'Content-Disposition': `attachment; filename="${path.basename(filePath).replace(/"/g, '')}"`, 'Cache-Control': 'no-store' });
+    response.writeHead(200, { 'Content-Type': 'application/epub+zip', 'Content-Length': stat.size, 'Content-Disposition': `attachment; filename="download.epub"; filename*=UTF-8''${encodeURIComponent(path.basename(filePath)).replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)}`, 'Cache-Control': 'no-store' });
     fs.createReadStream(filePath).pipe(response);
   } catch { return sendJson(response, 404, { error: 'output_not_found' }); }
 }
@@ -488,4 +497,12 @@ function escapeHtml(value) {
 
 server.listen(port, host, () => console.log(`web-content-fetch listening on http://${host}:${port}`));
 
-for (const job of jobs.values()) if (job.status === 'queued') setImmediate(drain);
+for (const job of jobs.values()) {
+  if (job.status === 'queued') setImmediate(drain);
+  if (job.status === 'cancelling') setImmediate(() => {
+    void orchestrator.cancel(job.id).catch(() => {
+      update(job, { status: 'cancelling', diagnostic: 'cancel_cleanup_failed' });
+    });
+  });
+}
+

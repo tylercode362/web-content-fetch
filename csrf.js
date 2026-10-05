@@ -38,7 +38,7 @@ function createCsrfStore(options = {}) {
         tokens.delete(candidate);
         return false;
       }
-      return constantTimeEqual(candidate, cookieToken);
+      return false;
     },
 
     cookieHeader(token, cookiePath = '/') {
@@ -53,11 +53,5 @@ function createCsrfStore(options = {}) {
   };
 }
 
-function constantTimeEqual(left, right) {
-  const leftBuffer = Buffer.from(String(left || ''));
-  const rightBuffer = Buffer.from(String(right || ''));
-  if (leftBuffer.length !== rightBuffer.length) return false;
-  return leftBuffer.length > 0 && crypto.timingSafeEqual(leftBuffer, rightBuffer);
-}
-
 module.exports = { MAX_TOKENS, TOKEN_TTL_MS, createCsrfStore };
+
