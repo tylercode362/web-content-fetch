@@ -466,6 +466,7 @@ class DownloadOrchestrator {
       if (owned.has(name)) await fsp.rm(destination, { force: true });
       await fsp.rename(item.source, destination);
       published.push(relativeOutput(this.outputDir, destination));
+      this.update(job, { outputs: [...new Set([...(job.outputs || []), published[published.length - 1]])] });
     }
     return published;
   }
@@ -855,7 +856,10 @@ class DownloadOrchestrator {
         const output = await writeNovelEpub({ outputDir: await this.ensureStage(job), title, chapters: contents });
         this.assertActive(job);
         const published = await this.publishOutputs(job, output.files);
+        this.update(job, { outputs: published });
+        this.assertActive(job);
         await this.removeJobFiles(job);
+        this.assertActive(job);
         this.update(job, {
           status: 'complete',
           progress: { phase: 'complete', completed: chapters.length, total: chapters.length },
@@ -979,6 +983,7 @@ class DownloadOrchestrator {
       }
       this.assertActive(job);
       await this.removeJobFiles(job);
+      this.assertActive(job);
       this.update(job, {
         status: 'complete',
         progress: { phase: 'complete', completed: chapters.length, total: chapters.length },
@@ -1182,4 +1187,3 @@ module.exports = {
   isTerminal,
   isClearable
 };
-

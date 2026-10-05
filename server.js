@@ -1,4 +1,5 @@
 const http = require('node:http');
+const { pipeline } = require('node:stream');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
@@ -9,6 +10,7 @@ const { applyBindingToJob, getBinding, normalizeConfig } = require('./binding-st
 const { publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('./job-view');
 const { createCsrfStore } = require('./csrf');
 const { recoverJobState } = require('./restart-policy');
+const { createProgressStream } = require('./progress-stream');
 
 const host = process.env.WEB_CONTENT_FETCH_BIND_HOST || '127.0.0.1';
 const port = Number(process.env.WEB_CONTENT_FETCH_PORT || 8092);
@@ -105,7 +107,7 @@ function update(job, change) {
 
 function publish() {
   const body = `data: ${JSON.stringify({ jobs: [...jobs.values()].map(publicJob), binding: publicBinding(config) })}\n\n`;
-  for (const response of subscribers) response.write(body);
+  for (const send of subscribers) send(body);
 }
 
 const orchestrator = new DownloadOrchestrator({
@@ -317,10 +319,11 @@ async function handleRequest(request, response) {
     return sendJson(response, 200, { jobs: [...jobs.values()].map(publicJob), binding: publicBinding(config) });
   }
   if (request.method === 'GET' && url.pathname === '/api/events') {
+    if (subscribers.size >= 32) return sendJson(response, 503, { error: 'progress_subscriber_limit' }, { 'Retry-After': '3' });
     response.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store', Connection: 'keep-alive' });
-    response.write(`data: ${JSON.stringify({ jobs: [...jobs.values()].map(publicJob), binding: publicBinding(config) })}\n\n`);
-    subscribers.add(response);
-    request.on('close', () => subscribers.delete(response));
+    const send = createProgressStream(response, () => subscribers.delete(send));
+    subscribers.add(send);
+    send(`data: ${JSON.stringify({ jobs: [...jobs.values()].map(publicJob), binding: publicBinding(config) })}\n\n`);
     return;
   }
   if (request.method === 'POST' && url.pathname === '/api/bridge/pair') {
@@ -360,6 +363,7 @@ async function handleRequest(request, response) {
         updatedAt: now
       };
       applyBindingToJob(job, binding);
+      if (jobs.size >= maxJobs) return sendJson(response, 429, { error: 'queue_full' });
       jobs.set(job.id, job);
       persistJobs();
       publish();
@@ -449,7 +453,7 @@ async function downloadOutput(response, relativeName) {
     const stat = await fsp.stat(filePath);
     if (!stat.isFile() || stat.size > 512 * 1024 * 1024) return sendJson(response, 404, { error: 'output_not_found' });
     response.writeHead(200, { 'Content-Type': 'application/epub+zip', 'Content-Length': stat.size, 'Content-Disposition': `attachment; filename="download.epub"; filename*=UTF-8''${encodeURIComponent(path.basename(filePath)).replace(/['()*]/g, character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)}`, 'Cache-Control': 'no-store' });
-    fs.createReadStream(filePath).pipe(response);
+    pipeline(fs.createReadStream(filePath), response, () => {});
   } catch { return sendJson(response, 404, { error: 'output_not_found' }); }
 }
 
@@ -505,4 +509,3 @@ for (const job of jobs.values()) {
     });
   });
 }
-

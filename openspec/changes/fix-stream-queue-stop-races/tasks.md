@@ -1,0 +1,7 @@
+- [ ] WCF50-01 串流故障注入 Red／Green、同程序健康檢查。
+- [ ] WCF50-02 並行 request body 回歸。
+- [ ] WCF50-03 發布 barrier／停止意圖回歸。
+- [ ] 正式 Docker、完整測試及既有 Browser Read 相容性驗收。
+- [ ] WCF50-04 SSE 背壓／逾時／斷線清理單元回歸；32 個上限與重連實際 Docker 驗證。
+- [ ] WCF50-03 漫畫最終清理取消／暫停 barrier Red／Green。
+- [ ] WCF50-05 真實暫存檔案第二次更名失敗、部分輸出歸屬與清理 Red／Green。
