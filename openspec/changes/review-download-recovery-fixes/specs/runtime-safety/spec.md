@@ -1,29 +1,39 @@
 ## ADDED Requirements
 
-### Requirement: Safe download responses
-The service SHALL encode Unicode filenames as UTF-8 filename* and retain an ASCII fallback.
+### Requirement: 安全的下載回應
+服務 SHALL 將 Unicode 檔名編碼至 UTF-8 filename*，並保留 ASCII 備用檔名。
 
-#### Scenario: Unicode download
-- **GIVEN** a valid output with a Chinese filename
-- **WHEN** the client downloads it
-- **THEN** the service SHALL return the original bytes with a valid Content-Disposition header
+#### Scenario: WCF-01 中文檔名下載
+- **GIVEN** 合法輸出檔使用中文名稱
+- **WHEN** 客戶端下載該檔案
+- **THEN** 回傳原始位元組及合法 Content-Disposition 標頭
 
-#### Scenario: Malformed request
-- **WHEN** the download path contains malformed percent encoding or the request URL is invalid
-- **THEN** the service SHALL return 400 and remain available
+#### Scenario: WCF-02 錯誤的下載編碼
+- **GIVEN** 服務已啟動
+- **WHEN** 路徑含不合法 percent encoding 或 URL
+- **THEN** 回傳 400，且同一程序仍可回應健康檢查
 
-### Requirement: Persistent stop intent
-Recovery SHALL preserve pause and cancel requests and SHALL NOT fetch content for those jobs.
+### Requirement: 保留停止意圖
+恢復程序 SHALL 保留暫停與取消要求，且不得為這些任務重新擷取內容。
 
-#### Scenario: Restart during pause or cancel
-- **GIVEN** persisted pausing or cancelling state
-- **WHEN** the service restarts
-- **THEN** pausing SHALL become paused and cancelling SHALL continue cleanup without entering the queue
-- **AND** cleanup failure SHALL retain a retryable cancelling state
+#### Scenario: WCF-03 暫停或取消途中重啟
+- **GIVEN** 已保存 pausing 或 cancelling 狀態
+- **WHEN** 服務重啟
+- **THEN** pausing 成為 paused；cancelling 只繼續清理，不進入下載佇列
+- **AND** 清理失敗保留可重試的 cancelling 狀態
 
-### Requirement: Persistent CSRF expiry rejection
-Unknown, expired or evicted CSRF tokens MUST be rejected even when their cookie matches.
+### Requirement: 持續拒絕無效 CSRF token
+服務 MUST 拒絕未知、過期或已淘汰的 CSRF token，即使 cookie 相符也不能重新接受。
 
-#### Scenario: Repeated expired token
-- **WHEN** the same expired token is submitted repeatedly or after purge or restart
-- **THEN** every submission SHALL be rejected until the client obtains a new token
+#### Scenario: WCF-04 重複傳送過期 token
+- **GIVEN** token 已過期、被淘汰或來自先前程序
+- **WHEN** 重複送出該 token
+- **THEN** 每次均拒絕，直到客戶端取得新的 token
+
+### Requirement: 正式部署使用安裝目錄
+NAS 腳本 MUST 在啟用服務前將 Compose 來源切回正式安裝目錄。
+
+#### Scenario: WCF-05 暫存清理後來源仍存在
+- **GIVEN** 候選已在暫存目錄建置並複製至安裝目錄
+- **WHEN** 執行正式 Compose 啟用
+- **THEN** Compose 使用安裝目錄的設定，不依賴之後會清除的 staging

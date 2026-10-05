@@ -153,6 +153,8 @@ cp -p "$stage_root/compose.nas.yaml" "$remote_project/compose.nas.yaml"
 cp -p "$stage_root/.env" "$remote_project/.env"
 
 echo "Recreating web-content-fetch."
+compose_file="$remote_project/compose.yaml"
+nas_compose_file="$remote_project/compose.nas.yaml"
 compose up -d --build --force-recreate --remove-orphans web-content-fetch
 
 http_ok() {

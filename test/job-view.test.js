@@ -125,7 +125,7 @@ test('reusable deployment script is confirmation-gated and health-checked', asyn
 test('NAS deployment uses fixed networks and explicit config initialization', async () => {
   const source = await fs.readFile(path.join(__dirname, '..', 'scripts', 'Deploy-Nas.ps1'), 'utf8');
   const remoteSource = await fs.readFile(path.join(__dirname, '..', 'scripts', 'Deploy-Nas-remote.sh'), 'utf8');
-  assert.match(remoteSource, /compose_file="\$remote_project\/compose\.yaml"\s+nas_compose_file="\$remote_project\/compose\.nas\.yaml"\s+compose up -d --build --force-recreate web-content-fetch/s);
+  assert.match(remoteSource, /compose_file="\$remote_project\/compose\.yaml"\s+nas_compose_file="\$remote_project\/compose\.nas\.yaml"\s+compose up -d --build --force-recreate --remove-orphans web-content-fetch/s);
   const overlay = await fs.readFile(path.join(__dirname, '..', 'compose.nas.example.yaml'), 'utf8');
   assert.match(source, /ConfirmDeploy/);
   assert.match(source, /--exclude=\.env/);
