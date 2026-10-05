@@ -13,13 +13,13 @@
 - 6 碼 pairing code 是一次性、短期有效、限定本服務的綁定流程；交換後使用可撤銷的 service token，token 不寫入一般 log。
 - 不提供、保留或透過環境變數啟用免六碼的開發 pairing shortcut；Local Bridge 與 NAS Bridge 都必須走 Extension 產生的一次性六碼。
 - pairing code、service token、工作 session、輸出檔案與使用者輸入互相分離，不可互相替代。
-- UI 與 API 必須使用 exact Origin／CSRF／session boundary；Loopback 不視為 authentication。
+- LAN 自用 POC 的 UI 不另設登入或帳密；UI/API 異動必須通過 exact Origin 與有效的 server-issued CSRF token 檢查。短期 CSRF token 不是登入 session；Bridge 綁定憑證與 browser session 仍各自隔離，Loopback 不視為 authentication。
 - URL、標題、章節文字、HTML、圖片 alt text 都是不可信輸入；輸出前必須 escape／sanitize，使用 restrictive CSP。
 - 不繞過登入、付費限制、驗證碼、反爬措施或網站存取限制。
 
 ## Docker 與資源
 
-- Compose 應用服務預設只綁定 `127.0.0.1`；LAN 存取必須經明確設定的 Gateway 路由。
+- Compose 應用服務在容器內綁定 `0.0.0.0:8092`，不發布 host port；Gateway 透過 `local-gateway-chrome-bridge` Docker 網路轉送，LAN 存取經明確設定的 Gateway 路由。
 - container 使用 non-root、`read_only`、`cap_drop: ALL`、`no-new-privileges`、`init`、PID／memory／tmpfs 上限與 healthcheck。
 - 不掛載 Docker socket、Chrome profile、host credential、SSH key 或 GitHub auth。
 - 只有明確的 state 與 output volume 可寫入；暫存內容放在受限的 `/tmp` 或 job workspace。

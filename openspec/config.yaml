@@ -10,7 +10,8 @@ context: |
   - Pairing code、Bridge service token、browser session、job state、asset bytes 與 output files are separate capabilities.
 
   Security baseline:
-  - Loopback is not authentication; UI/API mutation requires exact Origin, CSRF and session checks.
+  - LAN 自用 POC 的 UI 不另設登入或帳密；UI/API mutation requires exact Origin and a valid server-issued CSRF token. The short-lived CSRF token is not a login session; Bridge binding credentials and browser sessions remain separate capabilities. Loopback is not authentication.
+  - Compose binds 0.0.0.0:8092 inside the container without publishing host ports; Gateway forwards traffic through the local-gateway-chrome-bridge Docker network.
   - User URL, page HTML, chapter text, image metadata and site content are untrusted input.
   - Logs exclude cookies, tokens, pairing codes, raw content, full image bytes and sensitive query values.
   - All queue, page, asset, byte, time and retry budgets are bounded; overflow fails with an explicit diagnostic.
