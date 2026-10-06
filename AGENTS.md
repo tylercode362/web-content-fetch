@@ -33,7 +33,7 @@
 
 - 本專案的新增功能不得要求停用或破壞 `chrome-bridge` 既有 Threads、X、YouTube 功能。
 - 所有 Bridge protocol 變更都必須 additive、具版本相容策略，並通過既有 Browser Read 回歸測試。
-- 不得自動 reset、clean、stage、commit 或 push。
+- 保留無關工作與資料；Git 操作核對 repository、branch、完整 SHA 與當次有效範圍，不以文件推定發布或部署權限。
 
 ## 驗證
 
@@ -52,3 +52,17 @@
 - 撰寫或修訂技術規格、README、操作程序、驗收與審查報告，或需要改善清晰度與術語一致性的實質改寫時，必要時自動啟用 write-taiwan-technical-chinese 技能；一般閒聊與簡短回覆不必啟用。不固定公告啟用，既有通知與安靜時段規則優先。
 
 - 完整技能與自動啟用設定見 [write-taiwan-technical-chinese](.agents/skills/write-taiwan-technical-chinese/SKILL.md)。
+
+## 共通工程與驗收
+
+- 開始工作時重新核對本 repo、完整來源 SHA、適用的 AGENTS.md、openspec/config.yaml 與 active change；專案特例保留在本檔，OpenSpec 設定引用此段，避免重複維護。
+- 程式採簡單、範圍明確且容易維護的實作，沿用既有命名、格式與責任邊界；不為假設需求加入抽象層、平行權威模型或新架構。依已核准 OpenSpec 記錄需求來源、變更範圍、不變事項及驗收條件，交付前核對實際差異。
+- 雲端負責實作、審查與 headless 產品／易用性驗收。使用者本機的 Codex 執行角色為 GPT-5.6 Luna Max，工作限於當次指定的 Git 同步、Docker 建置／更新、必要設定及 Gateway／啟動檢查；不重複雲端產品驗收，不新增主機開發執行環境。
+- UI 主要功能保持可見、易找且操作層級淺；有檔案操作時置於頂部工具列，與側邊工具分開；選取物件的主要操作放第一層。避免深層巢狀選單及長頁面捲動，僅收合次要選項；使用者主動開啟的面板不得無預警消失。減少完成任務的步驟，但不自行訂通用點擊次數上限；既有核准設計及專案明定限制仍適用。
+- UI 驗收使用瀏覽器原生鍵盤、滑鼠及原生模擬觸控，涵蓋桌面與平板、完整任務流程、中斷／取消／返回／重試與恢復。記錄操作步驟數、入口可發現性、可理解的錯誤及恢復方式；專案要求的手寫筆與其他輸入另行覆蓋。
+- 直接呼叫 app 方法、派送程式事件、單元測試、HTTP health 或畫面截圖不能單獨證明使用者完成流程。原生模擬觸控不等於實體裝置、GPU 或效能驗證；未覆蓋項目明列限制。
+- OpenSpec、Stylelint 與相關開發依賴每次更新前核對實際版本、官方新版及安全公告，適用時升級並重新驗證；維持專案來源審查與版本鎖定。正式 NAS 映像不包含 OpenSpec、Stylelint 或其開發工具依賴；開發／測試與執行期分層。
+- 交付記錄 repository、branch、完整 commit SHA、差異範圍、工具版本、驗證環境、精確指令及結果；區分已修改、已測試、已提交、已推送、已部署。Git／部署只依當次有效範圍執行，文件與歷史測試不構成新的操作權限，也不證明目前部署狀態。
+
+- 本專案最終部署目標為 NAS；本機服務不必全部常駐。一般 LAN POC 沿用既有 Local Gateway，不新增 UI 登入、service key 或 HTTPS；exact Origin／server-issued CSRF、Chrome Bridge 既有加密驗證及一次性六碼配對維持不變。
+- UI 驗收涵蓋配對入口、建立工作、進度、取消／重試、SSE reconnect、輸出下載與可理解的失敗狀態；雲端使用 synthetic fixture，真實網站 Chrome smoke 另列指定範圍與未驗限制。
