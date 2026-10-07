@@ -17,4 +17,5 @@
 
 Historical completion marks are not evidence for this revised candidate. NAS runtime, key metadata, and polling have not been verified. No deployment or NAS modification is part of this candidate review.
 
-- [ ] CONSUMER GATE (not covered by this producer slice): `scripts/Deploy-Nas.ps1` imports the shared `RepositorySetupModule`, but this repo has no local `Repository-DeploySetup.psm1` or `tests/deployment/test-repository-setup.ps1`. Run the installed shared-module consumer against missing/wrong-project `host-status` and pin receipts, and record the result before claiming that binding.
+- [x] Central consumer evidence: Gateway commit `e0ec726970aa4dd1766996364d38b8664ab8a696`, module `scripts/Repository-DeploySetup.psm1` blob `9a5008ebed750b8851c467827aee852fb12c513b`; `pwsh -NoLogo -NoProfile -NonInteractive -File tests/powershell/Repository-DeploySetup.Tests.ps1` exits 0, covering missing/wrong-project host-status and pin receipts plus successful pinning. This is shared-module offline evidence, not proof of the module installed on NAS or this application's external module integration. No local module was added.
+- [ ] Verify the externally supplied module identity and installed version during the separately authorized integration/deployment gate.

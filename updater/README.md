@@ -34,3 +34,8 @@ consumer check remains pending against the installed module.
 自動部署只會將 exact-main archive 交給外部、owner 安裝的 immutable release supervisor。supervisor 必須先有固定 `web-content-fetch` template、digest image、review record、健康 baseline 與 rollback state，並以 `--no-build --pull never` 切換；本 updater 本身不會 build、pull 或重啟應用程式。
 
 實際 image provenance、NAS 權限、GitHub read-only key、Docker health、rollback 與 DSM service 安裝仍須由 owner 另行驗證。本次程式變更沒有連線 NAS、建立 key 或啟用排程。
+## Central consumer evidence — 2026-10-07
+
+Central consumer evidence: Gateway commit `e0ec726970aa4dd1766996364d38b8664ab8a696`, module `scripts/Repository-DeploySetup.psm1` blob `9a5008ebed750b8851c467827aee852fb12c513b`; `pwsh -NoLogo -NoProfile -NonInteractive -File tests/powershell/Repository-DeploySetup.Tests.ps1` exits 0, covering missing/wrong-project host-status and pin receipts plus successful pinning. This is shared-module offline evidence, not proof of the module installed on NAS or this application's external module integration. No local module was added.
+
+This supersedes the missing central consumer evidence stated below; local integration remains unverified.
