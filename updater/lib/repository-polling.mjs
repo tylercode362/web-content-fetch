@@ -97,6 +97,7 @@ export function gitInvocation(config, wrapperPath) {
 export function createRepositoryStore({paths = DEFAULT_PATHS, projectId = null, now = Date.now, execute = executeBounded, wrapperPath = fileURLToPath(new URL('./repository-ssh.sh', import.meta.url))} = {}) {
   const projectIds = projectId === null ? PROJECT_IDS : [assertProject(projectId)];
   const checkProject = (id) => { assertProject(id); if (!projectIds.includes(id)) fail('invalid_project'); return id; };
+  const responseProject = () => projectId === null ? {} : {project: projectId};
   const uid = process.getuid?.();
   const pathValues = Object.values(paths);
   if (Object.keys(paths).sort().join(',') !== 'config,keys,state' || new Set(pathValues).size !== 3 || pathValues.some((p) => typeof p !== 'string' || !isAbsolute(p) || resolve(p) !== p || !/^\/[A-Za-z0-9/._-]+$/.test(p)) || pathValues.some((p, i) => pathValues.some((q, j) => i !== j && p.startsWith(`${q}/`)))) fail('unsafe_directory');
@@ -257,7 +258,7 @@ export function createRepositoryStore({paths = DEFAULT_PATHS, projectId = null, 
       if (!Number.isSafeInteger(state.checkedAt) || state.checkedAt > now() || state.checkedAt <= 0) fail('invalid_state');
       return Math.max(0, POLL_INTERVAL_MS - (now() - state.checkedAt));
     },
-    async hostStatus() { return withLock(async () => { const bytes = await readSafe(join(paths.keys, 'github_known_hosts')); if (!bytes) return {ok: false, status: 'host_key_missing'}; const host = validateHostKey(bytes.toString('utf8')); return {ok: true, status: 'host_key_pinned', fingerprint: host.fingerprint}; }); },
+    async hostStatus() { const project = responseProject(); return withLock(async () => { const bytes = await readSafe(join(paths.keys, 'github_known_hosts')); if (!bytes) return {ok: false, status: 'host_key_missing', ...project}; const host = validateHostKey(bytes.toString('utf8')); return {ok: true, status: 'host_key_pinned', ...project, fingerprint: host.fingerprint}; }); },
     async inspect(id, repository) {
       checkProject(id); assertRepository(repository);
       return withLock(async () => {
@@ -275,13 +276,14 @@ export function createRepositoryStore({paths = DEFAULT_PATHS, projectId = null, 
       });
     },
     async pinHostKey(line, {confirmed = false} = {}) {
+      const project = responseProject();
       assertConfirmation(confirmed);
       const host = validateHostKey(line);
       return withLock(async () => {
         const target = join(paths.keys, 'github_known_hosts');
         if (await fileInfo(target)) fail('already_exists');
         await atomicWrite(target, host.line);
-        return {ok: true, status: 'host_key_pinned', fingerprint: host.fingerprint};
+        return {ok: true, status: 'host_key_pinned', ...project, fingerprint: host.fingerprint};
       });
     },
     async setup(id, repository, {confirmed = false} = {}) {

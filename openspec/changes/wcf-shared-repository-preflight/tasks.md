@@ -1,5 +1,10 @@
 # Tasks
 
+- [x] RED/GREEN: exercise the real `updater/lib/repository-polling.mjs` producer through `updater/project.json` for missing, confirmed-pin, and pinned `host-status` stdout; assert wrong and missing project consumers reject.
+- [x] Sync the project-scoped producer responses to the canonical shared polling contract without changing Dockerfile, project manifest, Compose, or security guards.
+- [ ] VERIFY (NAS-only): run the existing standalone updater image/digest upgrade with `--no-build --pull never`, preserve config/keys/state/status, and capture a real `project: web-content-fetch` `host-status`; this source review does not perform that operation.
+- [ ] Keep absent-updater manual bootstrap, old-installed-producer upgrade, and legacy-central owner migration as separate gates; do not treat app checkout, Gateway-module updates, or scheduler stop as protocol upgrade.
+
 - [x] Wire WCF deployment to the installed shared module with fixed project and repository arguments and separate host-pin parameters.
 - [x] Distinguish NAS SSH identity, the GitHub.com host key pin stored on the NAS, and repository-key authorization.
 - [x] Document module path, updater-store prerequisites, and owner confirmations.

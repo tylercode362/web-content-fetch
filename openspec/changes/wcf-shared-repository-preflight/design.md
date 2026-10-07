@@ -1,5 +1,11 @@
 # Design
 
+## Updater contract compatibility gate
+
+The project updater is a separately installed service. Keep three host states distinct: an absent updater retains the existing explicit first-application bootstrap; an old installed producer must be upgraded separately through the reviewed updater image/digest flow with `--no-build --pull never`, preserving config, keys, state, and deployment status; and a legacy central updater uses the existing owner migration, which must not be rerun when independent ownership is already established. Only the real project-scoped `host-status` response with `project: web-content-fetch` opens the application path.
+
+Application source checkout, shared Gateway-module updates, and stopping the updater scheduler are not updater protocol upgrades. This source-only review records the gate and focused regression; NAS image/digest upgrade and live stdout verification remain explicit, unexecuted operational steps.
+
 The WCF script imports the installed Local Gateway `Repository-DeploySetup.psm1` using a path relative to the WCF checkout. After the operator's existing `-ConfirmDeploy` gate and SSH identity-file check, it calls `Initialize-NasRepositoryHostPin` and `Invoke-NasRepositorySetup` with the explicit `-AllowMissingUpdater` opt-in before Compose validation and archive creation. Both receive the fixed project identifier; only repository setup receives the fixed repository identifier. When the project updater is present, the module checks the approved GitHub.com SSH host key pin stored in the NAS updater store and owner-confirmed, read-only repository-key registration. When it is absent on the first local-source deployment, the helper returns `updater_not_installed` and the application deployment continues without those remote checks. The script never starts or enables updater polling.
 
 Trust boundary: the workstation invokes SSH to the NAS using the existing NAS identity. The repository deploy key is a separate NAS-owned key used for read-only GitHub access. Workstation-to-NAS SSH host identity, the GitHub.com host key pin stored on the NAS, and repository deploy-key authorization are three separate checks. GitHub.com public host-key enrollment and repository public-key registration require separate owner confirmations. No private key or password is returned to GitHub or logged.

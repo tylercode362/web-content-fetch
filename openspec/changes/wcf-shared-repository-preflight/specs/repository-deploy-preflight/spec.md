@@ -1,5 +1,28 @@
 # Repository deployment preflight
 
+### Requirement: updater protocol compatibility gate
+
+The application deployment MUST distinguish an absent updater, an installed old producer, and a legacy central updater. An absent project updater MAY use the existing explicit manual application bootstrap. An installed old producer MUST be upgraded through the separately reviewed updater Compose/image-digest flow with `--no-build --pull never`, preserving config, keys, state, and deployment-status data, before application deployment continues. A legacy central updater MUST use the existing owner-migration procedure; an already-owned project MUST NOT rerun migration as a substitute for a producer-version upgrade. Application source checkout, shared Gateway-module updates, and stopping the updater scheduler MUST NOT be treated as protocol upgrades.
+
+#### Scenario: installed old producer fails closed until separately upgraded
+- GIVEN the project updater Compose/image exists but its producer predates project-scoped host responses, or returns a missing or wrong project
+- WHEN the application deployment preflight runs
+- THEN it stops before the application upload/cutover path
+- AND it preserves the updater config, keys, state, and deployment-status data
+- AND the standalone reviewed updater image/digest upgrade is the only allowed protocol-upgrade path
+- AND the application proceeds only after the real project-scoped `host-status` returns `project: web-content-fetch`
+
+#### Scenario: legacy central updater does not replace a version upgrade
+- GIVEN a legacy central updater is present
+- WHEN independent ownership has not yet been established
+- THEN the existing owner-migration procedure is used
+- AND when the project is already owned, migration is not rerun to replace a producer-version upgrade
+
+#### Scenario: source-only or scheduler-only changes do not open the gate
+- GIVEN only application source, the shared Gateway module, or scheduler state has changed
+- WHEN no standalone updater image/digest upgrade and real project-scoped `host-status` check have completed
+- THEN the host is not reported as protocol-upgraded or recovered
+
 ## ADDED Requirements
 
 ### Requirement: Verify the GitHub.com SSH host key pin when the updater is installed
