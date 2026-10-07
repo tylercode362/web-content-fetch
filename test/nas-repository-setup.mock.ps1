@@ -56,12 +56,16 @@ $runRemote = {
   }
   $state.Commands.Add($Command)
   if ($Command -match "'host-status'$") {
-    if ($state.Scenario -eq 'missing-host') { return @{ExitCode=0;Output='{"ok":false,"status":"host_key_missing"}'} }
-    if ($state.Scenario -eq 'mismatch-host') { return @{ExitCode=0;Output='{"ok":true,"status":"host_key_pinned","fingerprint":"SHA256:wrong"}'} }
-    return @{ExitCode=0;Output='{"ok":true,"status":"host_key_pinned","fingerprint":"SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"}'}
+    if ($state.Scenario -eq 'missing-host-project') { return @{ExitCode=0;Output='{"ok":true,"status":"host_key_pinned","fingerprint":"SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"}'} }
+    if ($state.Scenario -eq 'wrong-host-project') { return @{ExitCode=0;Output='{"ok":true,"status":"host_key_pinned","project":"wrong-project","fingerprint":"SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"}'} }
+    if ($state.Scenario -eq 'missing-host') { return @{ExitCode=0;Output='{"ok":false,"status":"host_key_missing","project":"web-content-fetch"}'} }
+    if ($state.Scenario -eq 'mismatch-host') { return @{ExitCode=0;Output='{"ok":true,"status":"host_key_pinned","project":"web-content-fetch","fingerprint":"SHA256:wrong"}'} }
+    return @{ExitCode=0;Output='{"ok":true,"status":"host_key_pinned","project":"web-content-fetch","fingerprint":"SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"}'}
   }
   if ($Command -match "'ensure-check' 'web-content-fetch' 'tylercode362/web-content-fetch'$") {
-    if ($state.Scenario -eq 'missing-key') { return @{ExitCode=0;Output='{"ok":false,"status":"not_configured"}'} }
+    if ($state.Scenario -eq 'missing-repository-project') { return @{ExitCode=0;Output='{"ok":true,"status":"read_access_verified","repository":"tylercode362/web-content-fetch","sha":"0123456789012345678901234567890123456789"}'} }
+    if ($state.Scenario -eq 'wrong-repository-project') { return @{ExitCode=0;Output='{"ok":true,"status":"read_access_verified","project":"wrong-project","repository":"tylercode362/web-content-fetch","sha":"0123456789012345678901234567890123456789"}'} }
+    if ($state.Scenario -eq 'missing-key') { return @{ExitCode=0;Output='{"ok":false,"status":"not_configured","project":"web-content-fetch"}'} }
     return @{ExitCode=0;Output='{"ok":true,"status":"read_access_verified","project":"web-content-fetch","repository":"tylercode362/web-content-fetch","sha":"0123456789012345678901234567890123456789"}'}
   }
   throw "Unexpected remote command: $Command"
@@ -79,24 +83,25 @@ if ($state.Commands[0] -notmatch "'host-status'$" -or
     $state.Commands[1] -notmatch "'ensure-check' 'web-content-fetch' 'tylercode362/web-content-fetch'$") {
   throw 'Wrong command order or repository binding.'
 }
-foreach ($scenario in @('missing-host','mismatch-host','missing-key')) {
+$strictPreflight = [scriptblock]::Create($preflight.ToString().Replace(' -AllowMissingUpdater -AllowRepositorySetupSkip', ''))
+foreach ($scenario in @('missing-host','mismatch-host','missing-key','missing-host-project','wrong-host-project','missing-repository-project','wrong-repository-project')) {
   $state.Scenario=$scenario; $state.Commands.Clear(); $caught=$null
-  try { & $preflight } catch { $caught=$_ }
+  try { if ($scenario -eq 'missing-key') { & $strictPreflight } else { & $preflight } } catch { $caught=$_ }
   if ($null -eq $caught) { throw "Expected fail-closed rejection for $scenario" }
-  if ($scenario -eq 'missing-host' -and
-      ($state.Commands.Count -ne 1 -or $caught.Exception.Message -notmatch 'GitHub host pin is missing')) {
-    throw 'Missing GitHub.com pin must stop with its diagnostic before repository check.'
+  if ($scenario -eq 'missing-host' -and ($state.Commands.Count -ne 1 -or $caught.Exception.Message -notmatch 'GitHub host pin is missing')) { throw 'Missing host pin must stop before repository check.' }
+  if ($scenario -eq 'mismatch-host' -and ($state.Commands.Count -ne 1 -or $caught.Exception.Message -notmatch 'differs from the reviewed pin')) { throw 'Mismatched host pin must stop before repository check.' }
+  if ($scenario -eq 'missing-key' -and ($state.Commands.Count -ne 2 -or $caught.Exception.Message -notmatch 'Repository key is not configured')) { throw 'Missing key must stop without opt-in.' }
+  if ($scenario -match 'project$') {
+    $expectedCalls = if ($scenario -match 'host-project$') { 1 } else { 2 }
+    if ($state.Commands.Count -ne $expectedCalls -or $caught.Exception.Message -notmatch 'unexpected_project') { throw "Project scope must reject before side effects: $scenario" }
   }
-  if ($scenario -eq 'mismatch-host' -and
-      ($state.Commands.Count -ne 1 -or $caught.Exception.Message -notmatch 'differs from the reviewed pin')) {
-    throw 'Mismatched GitHub.com pin must stop before repository check.'
-  }
-  if ($scenario -eq 'missing-key' -and
-      ($state.Commands.Count -ne 2 -or $caught.Exception.Message -notmatch 'Repository key is not configured')) {
-    throw 'Missing key must stop after host and read-only checks.'
-  }
-  if (($state.Commands -join "`n") -match 'setup-confirmed|create-key|pin-host-key-confirmed|poll-once|enable') {
-    throw 'Preflight attempted credential creation, trust mutation, or polling.'
-  }
+  if (($state.Commands -join [Environment]::NewLine) -match 'setup-confirmed|create-key|pin-host-key-confirmed|poll-once|enable') { throw 'Preflight attempted trust, credential, or polling changes.' }
+  Write-Output "PASS fail-closed $scenario"
 }
+# The real entry point opts into bounded manual bootstrap for a scoped missing key.
+$state.Scenario='missing-key'; $state.Commands.Clear()
+$receipt = & $preflight
+if ($state.Commands.Count -ne 2 -or $receipt.ManualBootstrap -ne $true -or $receipt.Mode -cne 'manual_application_bootstrap' -or $receipt.Status -cne 'not_configured') { throw 'Explicit missing-key bootstrap must return its bounded receipt after two read-only checks.' }
+if (($state.Commands -join [Environment]::NewLine) -match 'setup-confirmed|create-key|pin-host-key-confirmed|poll-once|enable') { throw 'Manual bootstrap attempted trust, credential, or polling changes.' }
+Write-Output 'PASS explicit missing-key bootstrap remains bounded'
 Write-Output 'PASS actual deployment preflight strict binding and mocked repository cases'

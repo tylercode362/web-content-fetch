@@ -22,7 +22,7 @@ test('actual host-pin argument map excludes repository and uses only supported f
   const keys = [...match[1].matchAll(/^\s*(\w+)\s*=/gm)].map((entry) => entry[1]).sort();
   assert.deepEqual(keys, ['Project', 'NasHost', 'NasUser', 'NasPort', 'IdentityFile', 'NasPassword', 'UseSudo', 'DockerPath', 'ComposePath', 'ComposePlugin', 'NonInteractive'].sort());
   assert.match(match[1], /Project\s*=\s*'web-content-fetch'/);
-  assert.match(source, /Initialize-NasRepositoryHostPin @repositoryHostSetup\s+\$repositorySetup = \$repositoryHostSetup\.Clone\(\)\s+\$repositorySetup\.Repository = 'tylercode362\/web-content-fetch'\s+Invoke-NasRepositorySetup @repositorySetup/);
+  assert.match(source, /Initialize-NasRepositoryHostPin @repositoryHostSetup -AllowMissingUpdater -AllowRepositorySetupSkip[ \t]*\r?\n\$repositorySetup = \$repositoryHostSetup\.Clone\(\)[ \t]*\r?\n\$repositorySetup\.Repository = 'tylercode362\/web-content-fetch'[ \t]*\r?\nInvoke-NasRepositorySetup @repositorySetup -AllowMissingUpdater -AllowRepositorySetupSkip[ \t]*\r?\n/);
   const mock = fs.readFileSync(path.join(__dirname, 'nas-repository-setup.mock.ps1'), 'utf8');
   assert.doesNotMatch(mock, /\.Remove\(['"]Repository['"]\)/);
   assert.match(mock, /Parser\]::ParseFile\(\$DeployPath/);

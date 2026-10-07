@@ -19,3 +19,7 @@ Historical completion marks are not evidence for this revised candidate. NAS run
 
 - [x] Central consumer evidence: Gateway commit `e0ec726970aa4dd1766996364d38b8664ab8a696`, module `scripts/Repository-DeploySetup.psm1` blob `9a5008ebed750b8851c467827aee852fb12c513b`; `pwsh -NoLogo -NoProfile -NonInteractive -File tests/powershell/Repository-DeploySetup.Tests.ps1` exits 0, covering missing/wrong-project host-status and pin receipts plus successful pinning. This is shared-module offline evidence, not proof of the module installed on NAS or this application's external module integration. No local module was added.
 - [ ] Verify the externally supplied module identity and installed version during the separately authorized integration/deployment gate.
+
+- [x] Reverify actual app preflight against canonical module 9a5008ebed750b8851c467827aee852fb12c513b: preserve Red, align opt-in ordering and scoped fixtures, retain missing/wrong-project and strict/manual-bootstrap cases. Offline integration only; no installed NAS acceptance.
+
+Focused evidence: Node/Pwsh offline integration plus producer: 5 passed, 0 failed, 0 skipped; canonical module is unchanged. Negative cases include missing/wrong host-status project, missing/wrong repository project, missing/mismatched host pin, missing key without opt-in, and unsupported Repository parameter. Explicit scoped missing-key bootstrap returns a bounded manual receipt without trust/key/polling effects. Installed module identity/version and broader gates remain pending.
