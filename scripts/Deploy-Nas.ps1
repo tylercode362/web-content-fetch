@@ -212,10 +212,10 @@ $repositoryHostSetup = @{
   ComposePlugin = [bool]$ComposePlugin
   NonInteractive = [bool]$RepositoryNonInteractive
 }
-Initialize-NasRepositoryHostPin @repositoryHostSetup
+Initialize-NasRepositoryHostPin @repositoryHostSetup -AllowMissingUpdater -AllowRepositorySetupSkip
 $repositorySetup = $repositoryHostSetup.Clone()
 $repositorySetup.Repository = 'tylercode362/web-content-fetch'
-Invoke-NasRepositorySetup @repositorySetup
+Invoke-NasRepositorySetup @repositorySetup -AllowMissingUpdater -AllowRepositorySetupSkip
 
 if ($UseSudo) { Assert-NasSudo }
 if ($InitializeRemoteConfig -and -not (Test-Path -LiteralPath $localConfig -PathType Leaf)) {

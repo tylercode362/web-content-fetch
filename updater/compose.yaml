@@ -1,0 +1,49 @@
+# Standalone project lifecycle. Never merge into Web Content Fetch application Compose.
+name: web-content-fetch-updater
+x-updater: &updater
+  image: ${UPDATER_IMAGE_REPOSITORY:?reviewed image repository}@sha256:${UPDATER_IMAGE_SHA256:?reviewed image digest}
+  pull_policy: never
+  init: true
+  user: "0:0"
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 32
+  mem_limit: 128m
+  stop_grace_period: 45s
+  networks: ["updater-egress"]
+  logging:
+    driver: json-file
+    options: {max-size: "1m", max-file: "2"}
+services:
+  updater:
+    <<: *updater
+    profiles: ["updater"]
+    restart: unless-stopped
+    command: ["run"]
+    volumes:
+      - /volume1/docker/web-content-fetch-updater-store/config:/repo-config:ro
+      - /volume1/docker/web-content-fetch-updater-store/keys:/deploy-keys:ro
+      - /volume1/docker/web-content-fetch-updater-store/state:/repo-state
+      - /volume1/docker/web-content-fetch-updater-store/status:/repo-state/deploy-status:ro
+    healthcheck:
+      test: ["CMD", "node", "/app/project-updater.mjs", "health"]
+      interval: 60s
+      timeout: 10s
+      start_period: 5m
+      retries: 2
+  updater_setup:
+    <<: *updater
+    profiles: ["setup"]
+    restart: "no"
+    stdin_open: true
+    tty: true
+    command: ["status"]
+    volumes:
+      - /volume1/docker/web-content-fetch-updater-store/config:/repo-config
+      - /volume1/docker/web-content-fetch-updater-store/keys:/deploy-keys
+      - /volume1/docker/web-content-fetch-updater-store/state:/repo-state
+      - /volume1/docker/web-content-fetch-updater-store/status:/repo-state/deploy-status:ro
+networks:
+  updater-egress:
+    driver: bridge

@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+keys/
+state/
+config/
+status/
+id_ed25519
+id_ed25519.pub

@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!project.json
+!project-updater.mjs
+!lib
+lib/*
+!lib/repository-polling.mjs
+!lib/repository-source.mjs
+!lib/repository-ssh.sh

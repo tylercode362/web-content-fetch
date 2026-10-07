@@ -2,15 +2,22 @@
 
 ## ADDED Requirements
 
-### Requirement: Verify the GitHub.com SSH host key pin stored on the NAS before repository access
-The WCF deployment script MUST verify the approved GitHub.com SSH host key pin stored in the NAS updater store before repository-access verification and before any local Compose validation, archive creation, upload, staging, or cutover. This check MUST remain separate from verification of the NAS SSH host identity and authorization through the repository-specific deploy key. It MUST stop if the module is missing, the GitHub.com pin is absent without explicit owner confirmation, or the stored fingerprint differs from the reviewed fingerprint. It MUST NOT silently enroll a key, use keyscan/TOFU, disable strict host checking, or overwrite a mismatched pin.
+### Requirement: Verify the GitHub.com SSH host key pin when the updater is installed
+When the fixed project updater exists, the WCF deployment script MUST verify the approved GitHub.com SSH host key pin stored in the NAS updater store before repository-access verification and before any local Compose validation, archive creation, upload, staging, or cutover. This check MUST remain separate from verification of the NAS SSH host identity and authorization through the repository-specific deploy key. It MUST stop if the module is missing, the existing updater is unsafe, or the stored fingerprint differs from the reviewed fingerprint. A missing pin MAY be skipped only by the local-source application entrypoint's explicit AllowRepositorySetupSkip path; strict paths and changed pins remain fail-closed. It MUST NOT silently enroll a key, use keyscan/TOFU, disable strict host checking, or overwrite a mismatched pin. A first local-source deployment MAY continue only when the fixed updater is absent and the entrypoint explicitly passes AllowMissingUpdater.
 
 #### Scenario: GitHub.com host key pin is missing in noninteractive mode
 - GIVEN the NAS SSH connection has been established through its own approved host-trust process
-- AND the NAS updater store does not contain the approved GitHub.com SSH host key pin
+- AND the installed NAS updater store does not contain the approved GitHub.com SSH host key pin
 - WHEN repository preflight runs noninteractively
-- THEN it stops with an explicit missing GitHub.com host-key-pin diagnostic before repository access or deployment side effects
-- AND it does not enroll a host key, create a deploy key, or enable polling
+- THEN the WCF local-source application entrypoint continues without enrolling a host key, creating a deploy key or enabling polling
+- AND a strict preflight path stops with an explicit missing GitHub.com host-key-pin diagnostic before deployment side effects
+
+#### Scenario: First application deployment before updater installation
+- GIVEN the fixed WCF updater compose file is absent
+- AND the workstation has local WCF source and its normal deployment gates
+- WHEN the entrypoint explicitly passes AllowMissingUpdater
+- THEN it continues to the existing Compose, packaging, staging and cutover checks
+- AND it does not create a host pin, deploy key, updater store or polling schedule
 
 #### Scenario: A deploy key does not replace host identity verification
 - GIVEN a WCF repository deploy key exists
@@ -20,15 +27,22 @@ The WCF deployment script MUST verify the approved GitHub.com SSH host key pin s
 - AND the deploy key does not bypass the host identity failure
 
 ### Requirement: Verify exact read-only repository access
-The preflight MUST verify repository access for project `web-content-fetch` and repository `tylercode362/web-content-fetch`. It MUST stop if read access is not verified. Missing repository keys MUST fail closed in noninteractive mode. Interactive key creation and GitHub read-only registration each require separate owner confirmation. Private keys and app credentials MUST NOT be exposed.
+The preflight MUST verify repository access for project `web-content-fetch` and repository `tylercode362/web-content-fetch`. It MUST stop if read access is not verified in a strict path. The WCF local-source application entrypoint MAY pass AllowRepositorySetupSkip so a missing project .env metadata or repository key can be skipped in noninteractive mode or by pressing Enter in the owner prompt. Interactive key creation and GitHub read-only registration each require separate owner confirmation. Private keys and app credentials MUST NOT be exposed.
 
 #### Scenario: Missing key without interaction
-- GIVEN the exact repository has no registered deployment key
-- WHEN preflight runs noninteractively
+- GIVEN the fixed updater exists and the exact repository has no registered deployment key
+- WHEN a strict preflight runs noninteractively
 - THEN it stops without creating or registering a key
 
+#### Scenario: Application deployment skips missing key
+- GIVEN the fixed updater exists and the exact repository has no registered deployment key
+- AND the WCF local-source application entrypoint passes AllowRepositorySetupSkip
+- WHEN preflight runs noninteractively or the owner presses Enter at the setup prompt
+- THEN application deployment continues to its existing validation, packaging, staging and cutover gates
+- AND automatic pull-main polling remains disabled
+
 #### Scenario: Existing verified key
-- GIVEN the exact repository has a verified read-only key
+- GIVEN the fixed updater exists and the exact repository has a verified read-only key
 - WHEN preflight runs
 - THEN it continues with the same fixed project and repository identifiers
 
