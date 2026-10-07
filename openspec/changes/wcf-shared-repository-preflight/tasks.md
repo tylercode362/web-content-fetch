@@ -1,6 +1,6 @@
 # Tasks
 
-- [x] RED/GREEN: exercise the real `updater/lib/repository-polling.mjs` producer through `updater/project.json` for missing, confirmed-pin, and pinned `host-status` stdout; assert wrong and missing project consumers reject.
+- [x] RED/GREEN: exercise the real `updater/lib/repository-polling.mjs` producer through `updater/project.json` for missing, confirmed-pin, and pinned `host-status` stdout; assert missing scope and wrong project producer arguments reject. This is producer-only coverage.
 - [x] Sync the project-scoped producer responses to the canonical shared polling contract without changing Dockerfile, project manifest, Compose, or security guards.
 - [ ] VERIFY (NAS-only): run the existing standalone updater image/digest upgrade with `--no-build --pull never`, preserve config/keys/state/status, and capture a real `project: web-content-fetch` `host-status`; this source review does not perform that operation.
 - [ ] Keep absent-updater manual bootstrap, old-installed-producer upgrade, and legacy-central owner migration as separate gates; do not treat app checkout, Gateway-module updates, or scheduler stop as protocol upgrade.
@@ -16,3 +16,5 @@
 - [ ] Complete the repository-required broader verification gates before claiming deployment readiness.
 
 Historical completion marks are not evidence for this revised candidate. NAS runtime, key metadata, and polling have not been verified. No deployment or NAS modification is part of this candidate review.
+
+- [ ] CONSUMER GATE (not covered by this producer slice): `scripts/Deploy-Nas.ps1` imports the shared `RepositorySetupModule`, but this repo has no local `Repository-DeploySetup.psm1` or `tests/deployment/test-repository-setup.ps1`. Run the installed shared-module consumer against missing/wrong-project `host-status` and pin receipts, and record the result before claiming that binding.
