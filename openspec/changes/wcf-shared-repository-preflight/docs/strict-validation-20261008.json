@@ -1,0 +1,110 @@
+{
+  "schema": "strict-cli-source-evidence/v1",
+  "repo": "wcf",
+  "recordedUtc": "2026-10-08T03:08:44.047735+00:00",
+  "review": "root independently accepted Libraryv5 exact26runs/775inputs",
+  "validatedBaselineHead": "3e9f07b1214f7593c78b9dd65d961c2a3bfa62af",
+  "validatedInputManifestSHA256": "2af9a7caf14e328bac99149591bc7ce6d3e9e270b719e06c0ccd60af0b54ca6c",
+  "tool": "OpenSpec1.14.1",
+  "image": "sha256:9d04a17616ba17dda10b23c6dff08e1b049ea72b3d9483e1bac17812b9bbd4d4",
+  "singleWorker": true,
+  "buildOrPull": false,
+  "sourceRecheckedAfterRuns": true,
+  "gates": [
+    {
+      "phase": "targeted",
+      "change": "overlord-aban-final-verification",
+      "exit": 0,
+      "startUtc": "2026-10-08T02:47:47.499676+00:00",
+      "endUtc": "2026-10-08T02:47:52.205041+00:00",
+      "stdoutSHA256": "521f2a0942f70b1fe2484e56bcd2a977eff5b93a3a276c6e37fd6d67c290da11",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": [
+        "STRICT_WORKER_CONCURRENCY=1",
+        "Change 'overlord-aban-final-verification' is valid"
+      ]
+    },
+    {
+      "phase": "targeted",
+      "change": "wcf-shared-repository-preflight",
+      "exit": 0,
+      "startUtc": "2026-10-08T02:48:10.999992+00:00",
+      "endUtc": "2026-10-08T02:48:14.169088+00:00",
+      "stdoutSHA256": "3eb635db1c37204102fb4f7178ca7af41d4d81744b12b372a8a1aff4cc931ca6",
+      "stderrSHA256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "summary": [
+        "STRICT_WORKER_CONCURRENCY=1",
+        "Change 'wcf-shared-repository-preflight' is valid"
+      ]
+    },
+    {
+      "phase": "all",
+      "change": null,
+      "exit": 0,
+      "startUtc": "2026-10-08T02:48:35.513485+00:00",
+      "endUtc": "2026-10-08T02:48:39.396210+00:00",
+      "stdoutSHA256": "026771c70ea20f7ae6651460fc1bd0897e2d875e6eb0a7fbc3acf20c49b7efc5",
+      "stderrSHA256": "abd438665822231df4a6461d79b32aad948f66035fe05a9fc6c145f6ad83bad1",
+      "summary": [
+        "STRICT_WORKER_CONCURRENCY=1",
+        "✓ change/clear-failed-jobs-only",
+        "✓ change/resume-failed-jobs",
+        "Totals: 32 passed, 0 failed (32 items)",
+        "  ℹ [INFO] failed-job-cleanup/spec.md: Archive would refuse this delta: failed-job-cleanup: target spec does not exist; only ADDED requirements are allowed for new specs. MODIFIED and RENAMED operations require an existing spec."
+      ]
+    }
+  ],
+  "changedSourceBindings": [
+    {
+      "path": "openspec/changes/overlord-aban-final-verification/docs/verification-source-before-merge.md",
+      "bytes": 4873,
+      "sha256": "789876648ab02d6c9175cd77597eba232e0fdf3f26485d96ae6adbf938d96d03",
+      "workingTreeSnapshot": true,
+      "baselineGitBlobReference": null,
+      "gitBlobProvesInputBytes": false
+    },
+    {
+      "path": "openspec/changes/overlord-aban-final-verification/specs/final-verification/spec.md",
+      "bytes": 4878,
+      "sha256": "92052db9332716429e0ab110d7664d102a1f1cd8d867110e992112fd8a6e6fde",
+      "workingTreeSnapshot": true,
+      "baselineGitBlobReference": "e9ab0c173aa14a1c37facda29cc341605edf66a2",
+      "gitBlobProvesInputBytes": false
+    },
+    {
+      "path": "openspec/changes/wcf-shared-repository-preflight/specs/repository-deploy-preflight/spec.md",
+      "bytes": 8299,
+      "sha256": "b66c3ae72c2aa31dd6b2c45ae7881f9fd291fe30f1a51e46de09d2f30551c1c6",
+      "workingTreeSnapshot": true,
+      "baselineGitBlobReference": "07cfc09831e7e80d21cf9e5d044f8315d1680ad9",
+      "gitBlobProvesInputBytes": false
+    }
+  ],
+  "removedPaths": [
+    "openspec/changes/overlord-aban-final-verification/specs/verification.md"
+  ],
+  "gitFilteredEOLOnlyDifferences": [
+    {
+      "path": "openspec/changes/overlord-aban-final-verification/docs/verification-source-before-merge.md",
+      "validatedWorkingTreeSHA256": "789876648ab02d6c9175cd77597eba232e0fdf3f26485d96ae6adbf938d96d03",
+      "gitFilteredBlobSHA256": "b8072dfeaa5fe54a3f0c7cfb38dbecd35fb4972344310935e1bdf75f4edbda0e",
+      "gitBlob": "cb3df9fa43e32971642557cf28568d8134dd70a8",
+      "difference": "CRLF/LF normalization only; no text changes"
+    },
+    {
+      "path": "openspec/changes/overlord-aban-final-verification/specs/final-verification/spec.md",
+      "validatedWorkingTreeSHA256": "92052db9332716429e0ab110d7664d102a1f1cd8d867110e992112fd8a6e6fde",
+      "gitFilteredBlobSHA256": "5f11e4479bb4eb3b6ccb3cc882e50bfe54d0cd67d3bb8678d6a0cc2f57908b3a",
+      "gitBlob": "a10051a8103b475a9c34db03d604e142ba449ee2",
+      "difference": "CRLF/LF normalization only; no text changes"
+    }
+  ],
+  "evidenceReceiptNotPartOfValidatedInput": true,
+  "receiptAddsNoBehaviorRequirement": true,
+  "owningWrapper": false,
+  "fullQualityGates": false,
+  "mainReady": false,
+  "tasksAutoCompleted": false,
+  "excludedPreexistingDirtyScripts": [],
+  "v4HistoricalIndependentDownload": "HTTP403; root v5 independent review subsequently accepted"
+}
