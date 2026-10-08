@@ -11,6 +11,6 @@
 | `jszip` | `3.10.2` | EPUB ZIP 容器 | MIT OR GPL-3.0-or-later |
 | `salty-crypto` | `1.0.0-rc.4` | Bridge Noise secure client | MIT |
 | `sanitize-html` | `2.17.7` | 小說 HTML 清理 | MIT |
-| `sharp` | `0.35.4` | 圖片解碼、縮放、JPEG 最佳化 | Apache-2.0；底層影像元件依 lockfile 授權 |
+| `sharp` | `0.35.5` | 圖片解碼、縮放、JPEG 最佳化 | Apache-2.0；底層影像元件依 lockfile 授權 |
 
 不把 Chrome profile、cookie、token、GitHub 認證或 Docker socket 放入容器。網路只在 runtime 連到明確設定的 Chrome Bridge；OpenSpec tools 容器執行時無網路。

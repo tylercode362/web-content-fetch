@@ -4,6 +4,8 @@
 
 ## 範圍（Scope）
 
+- 在既有 owning-project 安全 gate 收尾中，以原 `^0.35.4` 約束內的 sharp 0.35.5 更新 lock 與完整 prebuilt 依賴閉包，並在 PostCSS 的 `^1.2.1` 約束內將 runtime source-map-js lock 更新為 1.2.2；保留 package.json、產品程式、圖片格式政策與其他套件版本。合併兩項修補後的圖片解碼回歸與 audit 仍須重跑。
+
 - 將 WCF 部署腳本接上已安裝的 Local Gateway 共用儲存庫設定模組。
 - 主機金鑰檢查只傳入函式支援的參數；儲存庫檢查固定使用 `web-content-fetch` 與 `tylercode362/web-content-fetch`。
 - 說明並列的專案目錄、updater 儲存區，以及擁有者確認等必要條件。
