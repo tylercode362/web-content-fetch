@@ -1,0 +1,14 @@
+# Opt-in only. Confirm paths, access and downtime before applying.
+# Existing current-format config.json must already be verified in this volume.
+services:
+  web-content-fetch:
+    environment:
+      WEB_CONTENT_FETCH_CONFIG_DIR: /var/lib/web-content-fetch/config
+      WEB_CONTENT_FETCH_REQUIRE_EXISTING_BINDING: "1"
+    volumes:
+      - web_content_fetch_bridge_auth:/var/lib/web-content-fetch/config
+
+volumes:
+  web_content_fetch_bridge_auth:
+    external: true
+    name: ${WEB_CONTENT_FETCH_AUTH_VOLUME:?Set the verified existing auth volume name}

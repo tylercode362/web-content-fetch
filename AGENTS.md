@@ -22,7 +22,7 @@
 - Compose 應用服務在容器內綁定 `0.0.0.0:8092`，不發布 host port；Gateway 透過 `local-gateway-chrome-bridge` Docker 網路轉送，LAN 存取經明確設定的 Gateway 路由。
 - container 使用 non-root、`read_only`、`cap_drop: ALL`、`no-new-privileges`、`init`、PID／memory／tmpfs 上限與 healthcheck。
 - 不掛載 Docker socket、Chrome profile、host credential、SSH key 或 GitHub auth。
-- 只有明確的 state 與 output volume 可寫入；暫存內容放在受限的 `/tmp` 或 job workspace。
+- 只有明確的 state、output 與已核准的獨立 Bridge config volume 可寫入；暫存內容放在受限的 `/tmp` 或 job workspace。
 - named volume 初次掛載必須由 image 內預先建立並設定為 app 使用者可寫，避免非 root runtime 因權限錯誤遺失配對狀態或輸出檔案。
 - 工作數量、章節數、頁面數、圖片大小、EPUB 大小、執行時間與重試次數都必須有上限；超限要明確失敗，不可靜默丟資料。
 - 不使用 `latest` image tag；dependency 必須檢查 license、維護狀態與安全性。
@@ -52,3 +52,8 @@
 - 撰寫或修訂技術規格、README、操作程序、驗收與審查報告，或需要改善清晰度與術語一致性的實質改寫時，必要時自動啟用 write-taiwan-technical-chinese 技能；一般閒聊與簡短回覆不必啟用。不固定公告啟用，既有通知與安靜時段規則優先。
 
 - 完整技能與自動啟用設定見 [write-taiwan-technical-chinese](.agents/skills/write-taiwan-technical-chinese/SKILL.md)。
+
+## Bridge 設定與業務資料分離（2026-10-10）
+
+- 認證設定可使用獨立 config directory；jobs／checkpoints 與 output 不包含可刪的配對資料。保留配對切換須 fail-closed，不新增 legacy migration、credential 或配對方式。
+- 實際搬移前核對來源、目標、服務 UID、存取權限與停機範圍；程式設定支援不等於已核准部署、改權限或刪資料。
