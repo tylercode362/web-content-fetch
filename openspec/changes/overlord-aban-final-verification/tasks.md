@@ -22,3 +22,11 @@
 - [ ] 以已配對 Chrome Extension 執行阿邦真實網站驗證。
 - [ ] 驗證阿邦每章原始 EPUB 與 `.kepub.epub`、next／下一頁順序、廣告排除與 inline width／height。
 - [ ] 執行 WCF、Chrome Bridge 回歸測試、Compose health、OpenSpec strict validation 與安全／秘密掃描。
+
+## 2026-10-10 合成 EPUB／KEPUB 補充驗證
+
+- [x] 對 main `d69b9ffec959a66d6a9d621f75cbe444ad067927` 執行原始完整測試，其中 EPUB／KEPUB 六項通過，涵蓋章節清理、Kobo-safe 檔名、廣告排除、正文內嵌圖片、漫畫圖片順序與 viewport／inline dimensions。使用實際 sharp 0.35.5 與官方 kepubify v4.0.4 生成及讀取壓縮檔內容，不使用替代轉檔 stub。
+- [x] 追加獨立合成邊界檢核 9/9：空小說、空漫畫、缺少圖片資料、不可解碼圖片、digest 不符、超大圖片、小說缺少 inline asset 均拒絕；有效 PNG 轉為尺寸受限且比例保留的 JPEG；上述失敗生成不留下 EPUB 檔案。
+- [ ] 上述都是合成 fixture 與原生執行證據，未取得 OVERLORD／阿邦真實網站最終檔案；本 change 原有五項 VERIFY 仍未完成，不以合成結果替代已配對 Extension、真實頁面順序或最終輸出驗收。
+
+原生環境、工具來源、完整測試的 75 passed／2 skipped 與容器及其他未驗 gates 見 [串流與佇列補充紀錄](../fix-stream-queue-stop-races/tasks.md)。原始 log、輸出檔及其他執行證據保留於 Git 外。
