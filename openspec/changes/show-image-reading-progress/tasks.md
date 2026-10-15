@@ -9,4 +9,4 @@
 - [x] OpenSpec strict、production dependency audit 及本次差異 secret/privacy 檢查通過。
 - [ ] Compose、formatter、lint、typecheck gate：工具或專案指令未提供，詳見 verification.md。
 - [ ] 獨立 headless 實際操作驗收（由主代理協調，不以單元測試代替）。
-- [ ] 發布非 main 工作分支，核對遠端 SHA；不提交原始 log、trace 或截圖。
+- [x] 發布非 main 工作分支，核對遠端 SHA；產品提交 4c34213291e5f7cdaaaafb085a688e382280b062 已讀回確認，不提交原始 log、trace 或截圖。

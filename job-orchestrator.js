@@ -9,7 +9,7 @@ const { applyBindingToJob, getBinding, isUuid, publicBinding } = require('./bind
 const { cleanBookTitle, writeMangaChapterEpub, writeNovelEpub } = require('./epub-writer');
 
 const MAX_CHAPTERS = 2000;
-const MAX_PAGES = 512;
+const MAX_PAGES = 1000;
 const MAX_IMAGES = 1024;
 const MANGA_ASSET_BATCH_SIZE = 8;
 const NOVEL_ASSET_BATCH_SIZE = 16;
