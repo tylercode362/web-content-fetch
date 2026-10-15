@@ -8,3 +8,11 @@
 - 本 repo 不包含 Bridge 站點規則；其原有 `Math.min(rule.maxPagesPerChapter, request.maxPages || rule.maxPagesPerChapter)` 會保留較小站點上限。跨 repo 候選是否仍符合此契約及 1000 頁端到端，由主代理合併前核對。
 - 1000 頁真實下載、headless UI、平板與連續操作未驗。不更新 live，不重啟服務，不部署；main 由主代理 review 後依授權另行協調。
 - 原始測試輸出保留雲端，不提交 Git；本次差異人工檢查未發現秘密或私人資料，無 dependency 變更。
+
+## 長章節操作的已知阻擋（後續只讀核對）
+
+- Docker 固定 Node.js v22.22.1；官方 `deps/undici/src/lib/dispatcher/client.js` 第 222–223 行的 headers/body timeout 預設為 300 秒。WCF `bridge-client.js` 直接使用 native fetch，沒有自訂 dispatcher。同步 `content.fetch` 超過此等待時間仍可能失敗，調高 maxPages 不會解除它。
+- 來源：https://github.com/nodejs/node/blob/v22.22.1/deps/undici/src/lib/dispatcher/client.js#L222-L223
+- WCF SecureSession 與 Bridge SecureSession 均有 1 小時期限；回應解密／加密也檢查期限。超過期限的長操作不能因 Flow 自己允許 2 小時就視為可成功。
+- 本批不延長安全 session 期限、不加入非同步工作架構、不改全域 timeout 或新增 dispatcher 相依套件。1000 是請求容量上限，尚未證實 1000 頁可端到端完成。
+- WCF callback token 沒有另外的時間期限。SSE 15 秒是寫入背壓保護，不是章節工作逾時；Bridge 的 30 分鐘 job 清理只針對 finishedAt，不應當作執行中工作期限修改。

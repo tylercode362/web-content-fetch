@@ -28,3 +28,7 @@
 - 未變更 Bridge／Extension，未重啟使用者服務，未部署，未合併 main。
 
 原始執行輸出保留於雲端工作區，不提交 Git。
+
+## 最小 headless fixture 嘗試（後續）
+
+已準備使用候選原始 HTML／CSS／JS 的 synthetic HTTP／SSE fixture，計畫以桌機鍵鼠及平板 touch 展開卡片，檢查頁數、缺 pages、圖片驗證與 writing_epub 切換。獨立 Chromium 保留 sandbox 啟動時，在 process_singleton Unix socket 回報 `Operation not permitted`；同命令經正常 require_escalated 審核執行後仍有相同錯誤。兩次皆在頁面開啟前停止，未執行任何 UI 操作，不能記為通過。未停用 sandbox、未以其他瀏覽器取代。原始輸出保留雲端、不提交 Git。
