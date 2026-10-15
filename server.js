@@ -302,6 +302,10 @@ async function handleRequest(request, response) {
         completed: Number.isInteger(body.progress.completed) ? body.progress.completed : 0,
         total: Number.isInteger(body.progress.total) ? body.progress.total : null
       };
+      if (progress.phase === 'chapter_images_read' &&
+          Number.isInteger(body.progress.pages) && body.progress.pages >= 0) {
+        progress.pages = body.progress.pages;
+      }
       update(job, { bridgeProgress: progress });
     }
     return sendJson(response, 202, { accepted: true });

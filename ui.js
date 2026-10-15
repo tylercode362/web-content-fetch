@@ -93,7 +93,17 @@
     let detailLabel = progress.phase || '等待中';
     let chapterDownloadLabel = '等待目前章節';
     let chapterDownloadRatio = 0;
-    if (Number.isInteger(progress.image) && Number.isInteger(progress.imageTotal)) {
+    const isReadingPages = job.status === 'running' && bridgePhase === 'chapter_images_read' &&
+      ['fetching_chapters', 'resuming', 'retrying'].includes(progress.phase);
+    if (isReadingPages) {
+      // Bridge total can be a resource limit; completed can count images instead of pages.
+      const pages = validCount(bridgeProgress.pages);
+      const readingLabel = pages === null ? '讀取中' : '已讀取 ' + pages + ' 頁';
+      const chapter = validCount(progress.chapter) ?? (total !== null && completed < total ? completed + 1 : null);
+      const chapterLabel = chapter === null ? '目前章節' : '第 ' + chapter + ' 章';
+      detailLabel = chapterLabel + ' · ' + readingLabel;
+      chapterDownloadLabel = chapterLabel + ' · ' + readingLabel;
+    } else if (Number.isInteger(progress.image) && Number.isInteger(progress.imageTotal)) {
       const downloadedImages = Math.min(progress.imageTotal, progress.image + bridgeCompleted);
       detailLabel = '目前第 ' + (progress.chapter || '?') + ' 章 · 圖片 ' + downloadedImages + ' / ' + progress.imageTotal;
       chapterDownloadLabel = '第 ' + (progress.chapter || '?') + ' 章 · 圖片 ' + downloadedImages + ' / ' + progress.imageTotal;
