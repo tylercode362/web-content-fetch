@@ -8,5 +8,6 @@
 - [ ] 完整測試全數通過：目前 73 通過、9 失敗、2 略過；缺少 kepubify，HTTP 整合案例依原測試條件略過。
 - [x] OpenSpec strict、production dependency audit 及本次差異 secret/privacy 檢查通過。
 - [ ] Compose、formatter、lint、typecheck gate：工具或專案指令未提供，詳見 verification.md。
-- [ ] 獨立 headless 實際操作驗收（由主代理協調，不以單元測試代替）。
+- [x] 最小獨立 headless 顯示 fixture：桌機鍵鼠、平板 touch，各 5 場通過，詳見 verification.md。
+- [ ] 完整產品連續流程與真實網站下載驗收；不能以最小 fixture 替代。
 - [x] 發布非 main 工作分支，核對遠端 SHA；產品提交 4c34213291e5f7cdaaaafb085a688e382280b062 已讀回確認，不提交原始 log、trace 或截圖。

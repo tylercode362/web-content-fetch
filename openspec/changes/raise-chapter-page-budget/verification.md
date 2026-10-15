@@ -6,7 +6,7 @@
 - 完整測試：76 通過、9 失敗、2 略過。未修改基底在相同環境為 67 通過、同名 9 失敗、2 略過；本批進度 6 項與頁數 3 項皆通過。
 - 既存失敗與未驗 gate 詳見 `../show-image-reading-progress/verification.md`：6 項直接缺 kepubify，3 項續傳為已重現基底失敗。未將完整測試稱為全數通過。
 - 本 repo 不包含 Bridge 站點規則；其原有 `Math.min(rule.maxPagesPerChapter, request.maxPages || rule.maxPagesPerChapter)` 會保留較小站點上限。跨 repo 候選是否仍符合此契約及 1000 頁端到端，由主代理合併前核對。
-- 1000 頁真實下載、headless UI、平板與連續操作未驗。不更新 live，不重啟服務，不部署；main 由主代理 review 後依授權另行協調。
+- 1000 頁真實下載、完整產品連續操作未驗。進度標籤的最小 headless 桌機／平板 fixture 已通過，詳見相鄰進度修正 verification.md，不能取代 1000 頁端到端驗收。不更新 live，不重啟服務，不部署；main 由主代理 review 後依授權另行協調。
 - 原始測試輸出保留雲端，不提交 Git；本次差異人工檢查未發現秘密或私人資料，無 dependency 變更。
 
 ## 長章節操作的已知阻擋（後續只讀核對）
