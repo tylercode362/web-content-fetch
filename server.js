@@ -126,7 +126,7 @@ const orchestrator = new DownloadOrchestrator({
 
 function supported(value) {
   const parsed = new URL(value);
-  if (parsed.hostname === 'm.manhuagui.com' && /^\/comic\/\d+\/?$/.test(parsed.pathname)) return 'manga';
+  if (['m.manhuagui.com', 'tw.manhuagui.com'].includes(parsed.hostname) && /^\/comic\/\d+\/?$/.test(parsed.pathname)) return 'manga';
   if (parsed.hostname === 'www.8comic.com' && /^\/html\/\d+\.html$/.test(parsed.pathname)) return 'manga';
   if (parsed.hostname === 'tw.linovelib.com' && /^\/novel\/\d+(?:\.html|\/?$)/.test(parsed.pathname)) return 'novel';
   return null;
