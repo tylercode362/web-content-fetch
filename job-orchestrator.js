@@ -2,6 +2,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
+const { setTimeout: waitForCancellation } = require('node:timers/promises');
 const { BridgeClient } = require('./bridge-client');
 const { callContentOperation } = require('./content-operation-client');
 const { BRIDGE_URL, CALLBACK_URL } = require('./service-endpoints');
@@ -571,6 +572,15 @@ class DownloadOrchestrator {
       job.cancelRequested = true;
       job.pauseRequested = false;
       this.update(job, { status: 'cancelling', progress: { ...(job.progress || {}), phase: 'cancelling' } });
+      if (job.contentOperation && (!['complete', 'error', 'cancelled'].includes(job.contentOperation.state) ||
+          job.contentOperation.code === 'content_operation_conflict')) {
+        try {
+          await this.confirmContentOperationStopped(job);
+        } catch (error) {
+          this.update(job, { diagnostic: safeDiagnostic(error) });
+          throw error;
+        }
+      }
       await this.removeJobFiles(job);
       await this.removePublishedOutputs(job);
       this.update(job, {
@@ -597,6 +607,37 @@ class DownloadOrchestrator {
       }
     }
     return job;
+  }
+
+  async confirmContentOperationStopped(job) {
+    const operation = job.contentOperation;
+    const failure = code => Object.assign(new Error(code), { code });
+    const binding = getBinding(this.config, job.bindingId);
+    if (!binding?.serviceCredential || !binding.browserClientId) throw failure('content_operation_cancel_unavailable');
+    const client = new BridgeClient(binding);
+    const signal = AbortSignal.timeout(15_000);
+    try {
+      await client.cancelContentFetch(job.id, { signal });
+      while (true) {
+        signal.throwIfAborted();
+        const status = await client.getContentOperation(operation, { signal });
+        if (status?.success === false) throw failure(
+          typeof status.code === 'string' && /^[a-z0-9_]{1,120}$/.test(status.code)
+            ? status.code : 'content_operation_cancel_unconfirmed');
+        if (status?.success !== true || status.requestId !== operation.requestId ||
+            status.serverInstanceId !== operation.serverInstanceId) throw failure('content_operation_cancel_unconfirmed');
+        if (['complete', 'error', 'cancelled'].includes(status.state) && typeof status.result?.success === 'boolean') {
+          this.update(job, { contentOperation: { ...operation, state: status.state, code: undefined } });
+          return;
+        }
+        if (status.state === 'expired') throw failure('content_operation_expired');
+        if (status.state !== 'running') throw failure('content_operation_cancel_unconfirmed');
+        await waitForCancellation(200, undefined, { signal });
+      }
+    } catch (error) {
+      if (signal.aborted || error?.name === 'TimeoutError') throw failure('content_operation_cancel_timeout');
+      throw error;
+    }
   }
 
   async delete(jobId) {

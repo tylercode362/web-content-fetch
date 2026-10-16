@@ -37,3 +37,15 @@ WCF SHALL 在開始圖片資產讀取前持久保存已完成的漫畫章節結�
 - **GIVEN** 完整章節圖片清單已保存，且章節 URL 與工作相符
 - **WHEN** 資產讀取失敗後恢復
 - **THEN** SHALL 重用已保存的章節結果，不重新執行整話內容讀取；缺失或無效證據不得當作成功。
+
+### Requirement: 取消保留遠端操作的終止邊界
+WCF MUST 對仍有未確認終止 contentOperation 的 paused 或 queued 工作，使用既有獨立取消 session，並確認 Bridge 回報終止後才移除本機 checkpoint、輸出及標記 cancelled。
+
+#### Scenario: 暫停後遠端仍執行
+- **GIVEN** WCF 已暫停或重新排隊，但持久操作身分尚未確認終止
+- **WHEN** 使用者取消工作
+- **THEN** SHALL 以既有 operationKey 取消遠端操作，等待原操作終止及清理，再移除本機資料。
+
+#### Scenario: 遠端結果無法確認
+- **WHEN** 綁定不可用、查詢失敗、結果不明或取消等候超時
+- **THEN** MUST 保留操作身分及本機資料，維持可見的 cancelling 狀態與診斷，不宣稱已取消完成。
