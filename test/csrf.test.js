@@ -13,10 +13,12 @@ test('issued same-origin token remains valid when another page rotates the cooki
   assert.equal(store.verify('not-a-token', second), false);
 });
 
-test('csrf store expires tokens and bounds memory', async () => {
+test('csrf store expires tokens and bounds memory', t => {
+  let now = 1000;
+  t.mock.method(Date, 'now', () => now);
   const store = createCsrfStore({ ttlMs: 2, maxTokens: 2 });
   const expired = store.issue();
-  await new Promise(resolve => setTimeout(resolve, 8));
+  now += 8;
   assert.equal(store.verify(expired, expired), false);
   store.issue();
   store.issue();
@@ -25,14 +27,16 @@ test('csrf store expires tokens and bounds memory', async () => {
 });
 
 
-test('expired, purged, evicted and previous-process tokens stay rejected', async () => {
+test('expired, purged, evicted and previous-process tokens stay rejected', t => {
+  let now = 1000;
+  t.mock.method(Date, 'now', () => now);
   const expiring = createCsrfStore({ ttlMs: 2 });
   const expired = expiring.issue();
-  await new Promise(resolve => setTimeout(resolve, 8));
+  now += 8;
   assert.equal(expiring.verify(expired, expired), false);
   assert.equal(expiring.verify(expired, expired), false);
   const purged = expiring.issue();
-  await new Promise(resolve => setTimeout(resolve, 8));
+  now += 8;
   expiring.size();
   assert.equal(expiring.verify(purged, purged), false);
   const bounded = createCsrfStore({ maxTokens: 1 });

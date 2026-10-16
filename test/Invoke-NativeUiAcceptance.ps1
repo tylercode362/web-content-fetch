@@ -4,6 +4,7 @@ param(
   [Parameter(Mandatory)][string]$BridgeImage,
   [Parameter(Mandatory)][string]$SeccompProfile,
   [Parameter(Mandatory)][string]$EvidenceDirectory,
+  [switch]$SeparateConfig,
   [string]$BrowserImage = 'mcr.microsoft.com/playwright@sha256:bc6ab0d6d44ff4826e4cb8c1e6d801e185bfc42bb0753f8e2a30efc70db054c7'
 )
 $ErrorActionPreference = 'Stop'
@@ -32,7 +33,7 @@ try {
   Invoke-DockerChecked @('run', '--detach', '--name', $name, '--label', "codex.native-ui=$suffix", '--network', $name,
     '--add-host', 'nas-bridge:127.0.0.1', '--add-host', 'web-content-fetch:127.0.0.1', '--read-only', '--cap-drop', 'ALL',
     '--security-opt', 'no-new-privileges', '--user', '10001:10001', '--memory', '768m', '--pids-limit', '128',
-    '--tmpfs', '/tmp:size=128m,mode=1777', '-e', "UI_ORIGIN=http://${name}:8092",
+    '--tmpfs', '/tmp:size=128m,mode=1777', '-e', "UI_ORIGIN=http://${name}:8092", '-e', "UI_SEPARATE_CONFIG=$([int]$SeparateConfig.IsPresent)",
     '--mount', "type=bind,source=$fixtures,target=/fixtures,readonly", '--entrypoint', 'node', $image, '/fixtures/native-ui-service.cjs')
   $createdService = $true
   Invoke-DockerChecked @('run', '--rm', '--network', $name, '--read-only', '--user', 'pwuser', '--cap-drop', 'ALL',

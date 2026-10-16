@@ -18,14 +18,20 @@ const serviceId = '2f0c7aa1-a444-47e1-bc91-50be82b5158a';
 const bindingId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 let child, flowReject, release;
 const counters = { runs: 0, releases: 0, cancels: 0 };
+const separateConfig = process.env.UI_SEPARATE_CONFIG === '1';
+const configDir = root + (separateConfig ? '/config' : '/state');
+let originalConfig;
 async function main() {
   await fs.mkdir(root + '/state', { recursive: true });
   const auth = new AuthStore(root + '/auth.json', Buffer.alloc(32, 8));
   await auth.registerLocalBrowser({ browserClientId: browserId, allowedRuleIds: ['manhuagui-mobile-content'] });
   const credential = await auth.pairService({ browserClientId: browserId, serviceClientId: serviceId });
-  await fs.writeFile(root + '/state/config.json', JSON.stringify({ activeBindingId: bindingId, bindings: [{
+  const { normalizeConfig } = require('/app/binding-store');
+  await fs.mkdir(configDir, { recursive: true, mode: 0o700 });
+  originalConfig = JSON.stringify(normalizeConfig({ activeBindingId: bindingId, bindings: [{
     bindingId, serviceClientId: serviceId, browserClientId: browserId, serviceCredential: credential
-  }] }), { mode: 0o600 });
+  }] }));
+  await fs.writeFile(configDir + '/config.json', originalConfig, { mode: 0o600 });
   const registry = new BrowserRegistry();
   registry.register({ browserClientId: browserId, displayName: 'synthetic UI acceptance', extensionVersion: '3.3.1',
     protocolVersion: 1, operatorApiVersion: 2, capabilities: ['manhuagui-mobile-content'],
@@ -48,6 +54,11 @@ async function main() {
   await new Promise(resolve => secure.listen(8788, '127.0.0.1', resolve));
   const control = http.createServer(async (req, res) => {
     try {
+      if (separateConfig) {
+        assert.equal(await fs.readFile(configDir + '/config.json', 'utf8'), originalConfig);
+        await assert.rejects(fs.access(root + '/state/config.json'), { code: 'ENOENT' });
+        assert.equal((await fs.stat(configDir)).mode & 0o777, 0o700);
+      }
       if (req.method === 'POST' && req.url === '/release') { assert.ok(release); release(); }
       else assert.equal(req.url, '/stats');
       let jobs = [];
@@ -60,6 +71,7 @@ async function main() {
   child = spawn(process.execPath, ['server.js'], { cwd: '/app', stdio: 'inherit', env: { ...process.env,
     WEB_CONTENT_FETCH_BIND_HOST: '0.0.0.0', WEB_CONTENT_FETCH_STATE_DIR: root + '/state',
     WEB_CONTENT_FETCH_ALLOWED_ORIGIN: process.env.UI_ORIGIN,
+    ...(separateConfig ? { WEB_CONTENT_FETCH_CONFIG_DIR: configDir, WEB_CONTENT_FETCH_REQUIRE_EXISTING_BINDING: '1' } : {}),
     WEB_CONTENT_FETCH_OUTPUT_DIR: root + '/output', WEB_CONTENT_FETCH_PORT: '8092' } });
   child.on('exit', code => process.exit(code || 0));
   process.on('SIGTERM', () => { flowReject?.(Error('fixture_shutdown')); release?.(); child.kill('SIGTERM'); });

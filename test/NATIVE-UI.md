@@ -12,3 +12,5 @@
 ```
 
 測試透過 CDP Input 的原生鍵盤、滑鼠與觸控事件操作正式表單及工作卡片，頁面 JavaScript evaluate 只讀取 DOM。斷言涵蓋桌面與平板的建立、暫停、恢復、同一 requestId 不重建、遠端釋放阻塞時仍為取消中、釋放後取消完成及重新載入／SSE 重連。真實 Bridge 的 HTTP、Noise、registry 與 ContentFetchService 都會執行；只有 Extension 的網站與釋放回條為受控合成 fixture。此結果不能宣稱真實漫畫網站下載通過。
+
+加上 `-SeparateConfig` 時，fixture 將 canonical 合成綁定放在獨立 0700 目錄並啟用保留配對模式；每次控制狀態讀取均斷言 credential 檔案位元組不變、原 state 不出現 config.json。這是儲存路徑與原生流程的合成驗證，不搬移正式資料。

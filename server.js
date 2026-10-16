@@ -6,7 +6,8 @@ const fsp = require('node:fs/promises');
 const path = require('node:path');
 const JSZip = require('jszip');
 const { DownloadOrchestrator, publicBinding, safeDiagnostic, isClearable } = require('./job-orchestrator');
-const { applyBindingToJob, getBinding, normalizeConfig } = require('./binding-store');
+const { applyBindingToJob, getBinding } = require('./binding-store');
+const { createConfigStore } = require('./config-store');
 const { publicDownloads, publicOutputGroups, legacyMangaOutputGroups } = require('./job-view');
 const { createCsrfStore } = require('./csrf');
 const { recoverJobState } = require('./restart-policy');
@@ -17,7 +18,10 @@ const port = Number(process.env.WEB_CONTENT_FETCH_PORT || 8092);
 const stateDir = process.env.WEB_CONTENT_FETCH_STATE_DIR || path.join(process.cwd(), '.state');
 const outputDir = process.env.WEB_CONTENT_FETCH_OUTPUT_DIR || path.join(process.cwd(), 'output');
 const stateFile = path.join(stateDir, 'jobs.json');
-const configFile = path.join(stateDir, 'config.json');
+const configDir = process.env.WEB_CONTENT_FETCH_CONFIG_DIR || stateDir;
+const preserveBinding = process.env.WEB_CONTENT_FETCH_REQUIRE_EXISTING_BINDING || '0';
+if (!['0', '1'].includes(preserveBinding)) throw new Error('binding_preserve_mode_invalid');
+const configStore = createConfigStore({ stateDir, configDir, requireExisting: preserveBinding === '1' });
 const jobs = new Map();
 const subscribers = new Set();
 const csrfStore = createCsrfStore();
@@ -32,22 +36,13 @@ function stripPublicPrefix(requestUrl, prefix = '/web-content-fetch') {
 
 fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
 fs.mkdirSync(outputDir, { recursive: true, mode: 0o700 });
-const config = loadConfig();
+const config = configStore.load();
 loadJobs();
-void saveConfig(config).catch(() => {});
+// A relocation must not rewrite or normalize the preserved credential at startup.
+if (preserveBinding !== '1') void saveConfig(config).catch(() => console.error('configuration write failed'));
 
-function loadConfig() {
-  let value = {};
-  try { value = JSON.parse(fs.readFileSync(configFile, 'utf8')); } catch (error) {
-    if (error.code !== 'ENOENT') console.error('configuration unavailable');
-  }
-  return normalizeConfig(value, process.env);
-}
-
-async function saveConfig(value) {
-  const temporary = `${configFile}.${crypto.randomUUID()}.tmp`;
-  await fsp.writeFile(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
-  await fsp.rename(temporary, configFile);
+function saveConfig(value) {
+  return configStore.save(value);
 }
 
 function loadJobs() {

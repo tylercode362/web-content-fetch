@@ -24,6 +24,7 @@ RUN npm cache clean --force \
 COPY --chown=app:app *.js ui.css ./
 COPY --from=kepubify-build --chown=app:app /out/kepubify /usr/local/bin/kepubify
 RUN mkdir -p /var/lib/web-content-fetch/state /var/lib/web-content-fetch/output \
+    && install -d -m 0700 -o app -g app /var/lib/web-content-fetch/config \
     && chown -R app:app /var/lib/web-content-fetch
 ENV WEB_CONTENT_FETCH_KEPUBIFY_PATH=/usr/local/bin/kepubify
 USER app
@@ -34,6 +35,7 @@ COPY --chown=app:app test ./test
 COPY --chown=app:app scripts ./scripts
 COPY --chown=app:app updater ./updater
 COPY --chown=app:app compose*.yaml ./
+COPY --chown=app:app Dockerfile ./
 CMD ["sh", "-c", "node --test test/*.test.js"]
 
 FROM base AS tools
