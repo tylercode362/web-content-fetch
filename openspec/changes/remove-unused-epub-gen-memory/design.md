@@ -15,4 +15,4 @@
 
 Docker 必須使用既有固定 image／Dockerfile 邊界，不掛載 Docker socket 或認證。不能以目前宿主機套件、跳過 KEPUB、偽造 audit 結果或刪減測試取代驗證。Docker engine 不可用時，不自行啟動可能連帶恢復應用的服務；保留準備成果並列出未驗項。
 
-目前工作環境的 Docker CLI 為 29.7.2，既有 `desktop-linux` 與 `default` 本機 named pipe 都不存在；尚未執行容器安裝、回歸、build、healthcheck 或部署。既有 Codex runtime 有 Node 與 pnpm，但未找到官方 npm CLI；不以自行編輯 lock 或引入另一種 lock 格式代替官方 npm 產生結果。
+初次準備時兩個本機Docker engine pipe不存在；之後使用者授權啟動Docker Desktop，engine已可用，Client／Server為29.7.2。本次只讀確認WCF Dockerfile固定的官方 `node:22.22.1-bookworm-slim@sha256:4f77a690f2f8946ab16fe1e791a3ac0667ae1c3575c3e4d0d4589e9ed5bfaf3d` 不在本機，對應 `node:22.22.1*` tag亦無結果。未pull替代image、未執行npm工具容器；manifest／lock仍未變更。既有宿主runtime仍無npm CLI，不手寫lock或換pnpm格式。產品回歸、build、healthcheck及部署皆未執行。
