@@ -1,5 +1,9 @@
 # 移除未使用的 epub-gen-memory
 
+## 本次要求與驗證安排
+
+本變更源自使用者於 2026-10-16 要求清理 D:\projects 各專案已確認不必要的追蹤內容與依賴；本次明確範圍為移除未使用的 epub-gen-memory。使用者另要求先完成清理，再集中執行產品與正式容器驗證；這是執行順序調整，沒有降低品質門檻。未執行的測試、掃描與正式驗收保持待辦，不得視為通過，也不據此合併 main。
+
 ## 範圍
 
 目前只有 `package.json`、`package-lock.json` 與 `docs/dependencies.md` 提到 `epub-gen-memory`；產品與正式測試沒有載入它。實際 EPUB writer 直接使用 `jszip`、`sanitize-html` 與 `sharp`。本次以官方 npm 工具移除這個直接依賴及其專屬間接依賴，保留其他直接依賴仍需使用的套件、版本與 integrity，並更新依賴用途文件。
