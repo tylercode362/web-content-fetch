@@ -9,7 +9,6 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
-    "epub-gen-memory": "^1.1.2",
     "jszip": "^3.10.1",
     "salty-crypto": "1.0.0-rc.4",
     "sanitize-html": "^2.17.1",
