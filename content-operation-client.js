@@ -15,17 +15,21 @@ async function callContentOperation({ client, job, body, signal, update, now = D
     const timeout = AbortSignal.timeout(15_000);
     return action(signal ? AbortSignal.any([signal, timeout]) : timeout);
   };
-  if (pending?.code === 'content_operation_conflict') throw operationError('content_operation_unresolved');
+  if (isConflict(pending?.code)) throw operationError('content_operation_unresolved');
   if (pending && pending.digest !== digest) {
     if (!['complete', 'error', 'cancelled'].includes(pending.state)) {
       const previous = await request(stop => client.getContentOperation(pending, { signal: stop }));
       assertStatus(previous);
+      if (isConflict(previous.result?.code)) {
+        save({ ...pending, state: previous.state, code: previous.result.code });
+        throw operationError('content_operation_unresolved');
+      }
       if (!['complete', 'error', 'cancelled'].includes(previous.state)) throw operationError('content_operation_unresolved');
     }
     save(null);
   }
   if (pending && ['error', 'cancelled'].includes(pending.state)) {
-    if (pending.code === 'content_operation_conflict') throw operationError('content_operation_unresolved');
+    if (isConflict(pending.code)) throw operationError('content_operation_unresolved');
     save(null);
   }
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -43,7 +47,7 @@ async function callContentOperation({ client, job, body, signal, update, now = D
           if (!result || typeof result.success !== 'boolean') throw operationError('content_operation_unknown');
           save({ ...pending, state: status.state, ...(result.code ? { code: result.code } : {}) });
           if (status.state === 'complete' && result.success) return result;
-          throw operationError(result.code === 'content_operation_conflict' ? 'content_operation_unresolved'
+          throw operationError(isConflict(result.code) ? 'content_operation_unresolved'
             : status.state === 'cancelled' ? 'content_operation_stopped' : result.code || 'browser_operation_failed');
         }
         if (status.state !== 'running') throw operationError('content_operation_unknown');
@@ -53,6 +57,10 @@ async function callContentOperation({ client, job, body, signal, update, now = D
       }
     } catch (error) {
       if (signal?.aborted) throw signal.reason;
+      if (isConflict(error.code)) {
+        if (pending) save({ ...pending, code: error.code });
+        throw operationError('content_operation_unresolved');
+      }
       const knownTerminal = pending && ['error', 'cancelled'].includes(pending.state);
       const retryTerminal = knownTerminal && terminalRetry.has(error.code);
       const retryTransport = !knownTerminal && (error.name === 'BridgeTransportError' || error.code === 'bridge_transport_failed');
@@ -74,6 +82,10 @@ function operationError(code) {
   const error = new Error(code);
   error.code = code;
   return error;
+}
+
+function isConflict(code) {
+  return code === 'content_operation_conflict' || code === 'content_operation_payload_conflict';
 }
 
 function contentRequestDigest(value) {

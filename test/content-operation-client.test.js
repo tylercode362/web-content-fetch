@@ -117,3 +117,30 @@ test('a legacy operation conflict cannot be bypassed on resume by changing the p
   client.createContentOperation = async () => { throw Error('must not dispatch'); };
   await assert.rejects(callContentOperation({ client, job, body, update }), { code: 'content_operation_unresolved' });
 });
+
+for (const code of ['content_operation_conflict', 'content_operation_payload_conflict']) {
+  test(`recovered ${code} cannot clear identity before a different step`, async () => {
+    const pending = { requestId: `${Date.now()}_previous`, serverInstanceId: 'instance', digest: 'previous', state: 'pending' };
+    const job = { contentOperation: pending };
+    const client = clientFor({ success: true, state: 'error', result: { success: false, code } });
+    client.operationServerInstance = async () => { throw Error('must not allocate'); };
+    client.createContentOperation = async () => { throw Error('must not dispatch'); };
+    await assert.rejects(callContentOperation({ client, job, body, update }), { code: 'content_operation_unresolved' });
+    assert.equal(job.contentOperation.requestId, pending.requestId);
+    assert.equal(job.contentOperation.code, code);
+  });
+}
+
+test('a create payload conflict pauses durably and cannot be bypassed on resume', async () => {
+  const job = {};
+  let creates = 0;
+  const client = clientFor({ success: false, code: 'content_operation_payload_conflict' });
+  client.createContentOperation = async () => { creates++; return { success: false, code: 'content_operation_payload_conflict' }; };
+  await assert.rejects(callContentOperation({ client, job, body, update }), { code: 'content_operation_unresolved' });
+  const identity = { ...job.contentOperation };
+  await assert.rejects(callContentOperation({ client, job, body: { ...body, mode: 'asset' }, update }),
+    { code: 'content_operation_unresolved' });
+  assert.equal(creates, 1);
+  assert.equal(job.contentOperation.requestId, identity.requestId);
+  assert.equal(job.contentOperation.code, 'content_operation_payload_conflict');
+});

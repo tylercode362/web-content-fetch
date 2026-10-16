@@ -36,7 +36,7 @@ for (const status of ['paused', 'queued', 'cancelling']) test(`${status} pending
   finish({ success: true, requestId: f.job.contentOperation.requestId, serverInstanceId: f.job.contentOperation.serverInstanceId, state: 'cancelled', result: { success: false, code: 'flow_cancelled' } });
   await cancelling; assert.equal(f.job.status, 'cancelled'); assert.equal(f.job.contentOperation.state, 'cancelled'); assert.deepEqual(f.cleaned, ['checkpoint', 'output']);
 });
-for (const code of ['content_operation_unknown', 'content_operation_expired', 'content_operation_server_changed', 'bridge_transport_failed']) test(`${code} preserves cancelling identity and local files`, async t => {
+for (const code of ['content_operation_expired', 'content_operation_server_changed', 'bridge_transport_failed']) test(`${code} preserves cancelling identity and local files`, async t => {
   const f = await fixture(t), identity = { ...f.job.contentOperation };
   BridgeClient.prototype.cancelContentFetch = async () => ({ success: true, cancelled: true });
   BridgeClient.prototype.getContentOperation = async () => ({ success: false, code });
@@ -78,4 +78,21 @@ test('a bounded cancellation deadline preserves identity and checkpoint', async 
   await assert.rejects(f.orchestrator.cancel(f.job.id), { code: 'content_operation_cancel_timeout' });
   assert.equal(f.job.status, 'cancelling'); assert.equal(f.job.contentOperation.requestId, '1700000000000_fixture');
   assert.equal(f.job.diagnostic, 'content_operation_cancel_timeout'); assert.deepEqual(f.cleaned, []); await fs.access(f.checkpoint);
+});
+test('unknown admission stays bounded and cannot complete cancellation', async t => {
+  const f = await fixture(t), timeout = AbortSignal.timeout;
+  AbortSignal.timeout = () => timeout(10);
+  const keepAlive = setTimeout(() => {}, 100);
+  t.after(() => { AbortSignal.timeout = timeout; clearTimeout(keepAlive); });
+  BridgeClient.prototype.cancelContentFetch = async () => ({ success: true, cancelled: false });
+  BridgeClient.prototype.getContentOperation = async () => ({ success: false, code: 'content_operation_unknown' });
+  await assert.rejects(f.orchestrator.cancel(f.job.id), { code: 'content_operation_cancel_timeout' });
+  assert.equal(f.job.status, 'cancelling'); assert.deepEqual(f.cleaned, []); await fs.access(f.checkpoint);
+});
+for (const code of ['content_operation_conflict', 'content_operation_payload_conflict']) test(`${code} error cannot prove another holder released`, async t => {
+  const f = await fixture(t, 'paused', 'error'); f.job.contentOperation.code = code;
+  BridgeClient.prototype.cancelContentFetch = async () => ({ success: true, cancelled: true });
+  BridgeClient.prototype.getContentOperation = async () => ({ success: true, ...f.job.contentOperation, state: 'error', result: { success: false, code } });
+  await assert.rejects(f.orchestrator.cancel(f.job.id), { code: 'content_operation_unresolved' });
+  assert.equal(f.job.status, 'cancelling'); assert.equal(f.job.contentOperation.code, code); assert.deepEqual(f.cleaned, []);
 });

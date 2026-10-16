@@ -568,28 +568,11 @@ class DownloadOrchestrator {
     if (!job) return null;
     if (isTerminal(job.status)) return job;
     if (job.status === 'queued' || job.status === 'paused' ||
-        (job.status === 'cancelling' && !this.runningJobs.has(job.id))) {
+        (job.status === 'cancelling' && !this.runningJobs.has(job.id) && !this.controllers.has(job.id))) {
       job.cancelRequested = true;
       job.pauseRequested = false;
       this.update(job, { status: 'cancelling', progress: { ...(job.progress || {}), phase: 'cancelling' } });
-      if (job.contentOperation && (!['complete', 'error', 'cancelled'].includes(job.contentOperation.state) ||
-          job.contentOperation.code === 'content_operation_conflict')) {
-        try {
-          await this.confirmContentOperationStopped(job);
-        } catch (error) {
-          this.update(job, { diagnostic: safeDiagnostic(error) });
-          throw error;
-        }
-      }
-      await this.removeJobFiles(job);
-      await this.removePublishedOutputs(job);
-      this.update(job, {
-        status: 'cancelled',
-        progress: { ...(job.progress || {}), phase: 'cancelled' },
-        diagnostic: null,
-        outputs: [],
-        outputGroups: []
-      });
+      await this.finishCancellation(job);
       return job;
     }
     if (job.status === 'running' || job.status === 'pausing' || job.status === 'cancelling') {
@@ -601,7 +584,7 @@ class DownloadOrchestrator {
       });
       this.controllers.get(job.id)?.abort();
       const binding = getBinding(this.config, job.bindingId);
-      if (binding?.serviceCredential && binding.browserClientId) {
+      if (!job.contentOperation && binding?.serviceCredential && binding.browserClientId) {
         const cancelClient = new BridgeClient(binding);
         void cancelClient.cancelContentFetch(job.id).catch(() => {});
       }
@@ -617,16 +600,21 @@ class DownloadOrchestrator {
     const client = new BridgeClient(binding);
     const signal = AbortSignal.timeout(15_000);
     try {
-      await client.cancelContentFetch(job.id, { signal });
       while (true) {
         signal.throwIfAborted();
+        await client.cancelContentFetch(job.id, { signal });
         const status = await client.getContentOperation(operation, { signal });
+        if (status?.success === false && status.code === 'content_operation_unknown') {
+          await waitForCancellation(200, undefined, { signal });
+          continue;
+        }
         if (status?.success === false) throw failure(
           typeof status.code === 'string' && /^[a-z0-9_]{1,120}$/.test(status.code)
             ? status.code : 'content_operation_cancel_unconfirmed');
         if (status?.success !== true || status.requestId !== operation.requestId ||
             status.serverInstanceId !== operation.serverInstanceId) throw failure('content_operation_cancel_unconfirmed');
         if (['complete', 'error', 'cancelled'].includes(status.state) && typeof status.result?.success === 'boolean') {
+          if (isContentOperationConflict(status.result.code)) throw failure('content_operation_unresolved');
           this.update(job, { contentOperation: { ...operation, state: status.state, code: undefined } });
           return;
         }
@@ -638,6 +626,23 @@ class DownloadOrchestrator {
       if (signal.aborted || error?.name === 'TimeoutError') throw failure('content_operation_cancel_timeout');
       throw error;
     }
+  }
+
+  async finishCancellation(job) {
+    this.update(job, { status: 'cancelling', progress: { ...(job.progress || {}), phase: 'cancelling' } });
+    if (job.contentOperation && (!['complete', 'error', 'cancelled'].includes(job.contentOperation.state) ||
+        isContentOperationConflict(job.contentOperation.code))) {
+      try {
+        await this.confirmContentOperationStopped(job);
+      } catch (error) {
+        this.update(job, { diagnostic: safeDiagnostic(error) });
+        throw error;
+      }
+    }
+    await this.removeJobFiles(job);
+    await this.removePublishedOutputs(job);
+    this.update(job, { status: 'cancelled', progress: { ...(job.progress || {}), phase: 'cancelled' },
+      diagnostic: null, outputs: [], outputGroups: [] });
   }
 
   async delete(jobId) {
@@ -1048,15 +1053,11 @@ class DownloadOrchestrator {
       });
     } catch (error) {
       if (job.cancelRequested || (isAbortError(error) && !job.pauseRequested)) {
-        await this.removeJobFiles(job);
-        await this.removePublishedOutputs(job);
-        this.update(job, {
-          status: 'cancelled',
-          progress: { ...(job.progress || {}), phase: 'cancelled' },
-          diagnostic: null,
-          outputs: [],
-          outputGroups: []
-        });
+        try {
+          await this.finishCancellation(job);
+        } catch (stopError) {
+          this.update(job, { status: 'cancelling', diagnostic: safeDiagnostic(stopError) });
+        }
       } else if (job.pauseRequested || job.status === 'pausing' || isPauseError(error)) {
         this.update(job, {
           status: 'paused',
@@ -1155,6 +1156,10 @@ function appendOutputSuffix(filename, suffix) {
 function safeDiagnostic(error) {
   const value = String(error?.code || error?.message || 'job_failed').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 120);
   return value || 'job_failed';
+}
+
+function isContentOperationConflict(code) {
+  return code === 'content_operation_conflict' || code === 'content_operation_payload_conflict';
 }
 
 function validMangaReaderResult(result, chapterUrl) {
