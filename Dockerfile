@@ -11,16 +11,30 @@ RUN git clone --depth 1 --branch "${KEPUBIFY_VERSION}" https://github.com/pgaski
     && test "$(git rev-parse HEAD)" = "${KEPUBIFY_COMMIT}" \
     && go build -trimpath -ldflags "-s -w -X main.version=${KEPUBIFY_VERSION}" -o /out/kepubify ./cmd/kepubify
 
-FROM base AS runtime
+FROM base AS dependencies
 COPY --chown=app:app package*.json ./
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev; fi
-COPY --chown=app:app . .
+RUN npm ci --omit=dev && npm cache clean --force
+
+FROM dependencies AS runtime
+ENV NODE_ENV=production
+RUN npm cache clean --force \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack /opt/yarn-v1.22.22 \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack \
+        /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx
+COPY --chown=app:app *.js ui.css ./
 COPY --from=kepubify-build --chown=app:app /out/kepubify /usr/local/bin/kepubify
 RUN mkdir -p /var/lib/web-content-fetch/state /var/lib/web-content-fetch/output \
     && chown -R app:app /var/lib/web-content-fetch
 ENV WEB_CONTENT_FETCH_KEPUBIFY_PATH=/usr/local/bin/kepubify
 USER app
 CMD ["node", "server.js"]
+
+FROM runtime AS test
+COPY --chown=app:app test ./test
+COPY --chown=app:app scripts ./scripts
+COPY --chown=app:app updater ./updater
+COPY --chown=app:app compose*.yaml ./
+CMD ["sh", "-c", "node --test test/*.test.js"]
 
 FROM base AS tools
 WORKDIR /opt/openspec

@@ -7,8 +7,8 @@
 - [x] 新增恢復衝突回歸先 RED 再 GREEN；完整 Docker Node suite 118 pass、0 fail、2 個既有 PowerShell skip。
 - [x] 兩份跨 repo fixture 的七項 HTTP／Noise 檢核通過，使用真實 Bridge registry、ContentFetchService、SecureBrowserService；Extension 與資料為 synthetic fixture。
 - [x] 乾淨重裝後完整回歸通過，含實際 EPUB／KEPUB 輸出；未使用 EPUB stub 取代此完整 suite。
-- [x] 兩 repo Compose config 與 OpenSpec 全量 strict 檢查通過；WCF 正式依賴稽核為零弱點。
-- [ ] 完成 headless 原生鍵鼠／觸控的取消與恢復流程；本輪未執行，不以 HTTP 或單元結果代替 UI 驗收。
-- [ ] 完成必要安全與品質門檻後才整合 main；Bridge 開發依賴稽核仍有未修補弱點。
+- [x] 兩 repo Compose config 與 OpenSpec 全量 strict 檢查通過（WCF 38、Bridge 40）；WCF 正式依賴稽核為零弱點。
+- [x] headless 原生桌面鍵鼠及平板觸控通過建立、暫停、恢復、取消、釋放阻塞與重新載入／SSE 重連；沿用相同 requestId。使用真實 WCF／Bridge 與合成 Extension，未驗真實網站。
+- [x] 必要品質與 UI 驗收已完成，符合 main 整合條件；使用者已接受 Bridge 的既知 dev 套件風險，production 仍須排除不必要套件並通過實際映像驗證。
 
 package.json 未設定 formatter、lint 或 JavaScript typecheck 指令，本輪不將語法檢查當成這些檢查通過。真實 Chrome／網站下載、部署與服務重啟未執行。原持有者或 release 回條無法確認時，保留待確認狀態；目前沒有自動解除該狀態的協定能力。

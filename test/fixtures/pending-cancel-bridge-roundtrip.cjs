@@ -5,8 +5,11 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
-if (!process.env.BRIDGE_SOURCE || !process.env.BRIDGE_DEPENDENCIES) throw Error('Explicit existing Bridge source/dependencies required');
-require(path.join(process.env.BRIDGE_DEPENDENCIES, 'ts-node/register/transpile-only'));
+if (!process.env.BRIDGE_SOURCE) throw Error('Explicit existing Bridge source required');
+if (process.env.BRIDGE_COMPILED !== '1') {
+  if (!process.env.BRIDGE_DEPENDENCIES) throw Error('Explicit existing Bridge dependencies required');
+  require(path.join(process.env.BRIDGE_DEPENDENCIES, 'ts-node/register/transpile-only'));
+}
 const bridge = process.env.BRIDGE_SOURCE;
 const { AuthStore } = require(path.join(bridge, 'bridge-server/auth-store'));
 const { BrowserRegistry } = require(path.join(bridge, 'bridge-server/browser-registry'));

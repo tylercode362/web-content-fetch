@@ -19,6 +19,8 @@
 
 ## Docker 與資源
 
+- 正式 runtime target 只保留執行期套件、正式 JS/CSS 與 kepubify；test／tools target 各自提供驗證工具。使用者接受既知 dev 套件風險不適用於正式映像，須驗證實際映像內容及執行期行為。
+
 - Compose 應用服務在容器內綁定 `0.0.0.0:8092`，不發布 host port；Gateway 透過 `local-gateway-chrome-bridge` Docker 網路轉送，LAN 存取經明確設定的 Gateway 路由。
 - container 使用 non-root、`read_only`、`cap_drop: ALL`、`no-new-privileges`、`init`、PID／memory／tmpfs 上限與 healthcheck。
 - 不掛載 Docker socket、Chrome profile、host credential、SSH key 或 GitHub auth。

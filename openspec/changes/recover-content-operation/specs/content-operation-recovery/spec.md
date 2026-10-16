@@ -1,5 +1,12 @@
 ## ADDED Requirements
 
+### Requirement: 正式 Bridge 映像的協定回歸不依賴開發工具
+跨儲存庫合成 fixture SHALL 可在明確指定的已編譯 Bridge runtime 上執行，使用相同的固定斷言，且不要求 production 安裝 ts-node 或 TypeScript。
+
+#### Scenario: 最小 production 依賴
+- **WHEN** 使用 BRIDGE_COMPILED=1 指向 production 的已編譯後端
+- **THEN** fixture MUST 不載入 TypeScript 開發工具，並保留原有 Noise／HTTP 與取消競態斷言。
+
 ### Requirement: 同一邏輯請求只啟動一次
 系統 MUST 以服務、瀏覽器、requestId 與 payload 身分區分操作，並保留 job 級取消鎖。
 

@@ -15,3 +15,5 @@
 不把 Chrome profile、cookie、token、GitHub 認證或 Docker socket 放入容器。網路只在 runtime 連到明確設定的 Chrome Bridge；OpenSpec tools 容器執行時無網路。
 
 Runtime 僅保留實際使用的依賴；epub-gen-memory 及其專屬間接依賴不再安裝。移除不改變自建 EPUB writer、圖片處理或 KEPUB 流程；重裝與輸出斷言見對應 OpenSpec 工作項目。
+
+Dockerfile 的 dependencies 階段依 lockfile 安裝；runtime 只複製正式 JS/CSS、執行期套件與 kepubify，不攜入 test、scripts、updater、OpenSpec、工程文件或 npm／Corepack／Yarn。test 階段從 runtime 加入可重複執行的測試，tools 階段提供獨立 OpenSpec。以 `node scripts/verify-production-image.cjs` 在實際 runtime 映像中驗證套件閉包與禁止工具；驗證器透過唯讀掛載提供，不複製進正式映像。

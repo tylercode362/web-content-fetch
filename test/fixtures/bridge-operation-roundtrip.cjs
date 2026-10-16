@@ -6,7 +6,7 @@ const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 if (!process.env.BRIDGE_SOURCE) throw Error('BRIDGE_SOURCE must name the isolated Bridge source tree');
 const bridge = process.env.BRIDGE_SOURCE;
-require(path.join(bridge, 'node_modules/ts-node/register/transpile-only'));
+if (process.env.BRIDGE_COMPILED !== '1') require(path.join(bridge, 'node_modules/ts-node/register/transpile-only'));
 const { AuthStore } = require(path.join(bridge, 'bridge-server/auth-store'));
 const { BrowserRegistry } = require(path.join(bridge, 'bridge-server/browser-registry'));
 const { NoiseResponder, generateStaticKeyPair } = require(path.join(bridge, 'bridge-server/secure-channel'));

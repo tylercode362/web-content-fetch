@@ -1,0 +1,6 @@
+ARG WCF_IMAGE
+ARG BRIDGE_IMAGE
+FROM ${BRIDGE_IMAGE} AS bridge
+FROM ${WCF_IMAGE}
+COPY --from=bridge /app /opt/bridge
+ENV BRIDGE_SOURCE=/opt/bridge
