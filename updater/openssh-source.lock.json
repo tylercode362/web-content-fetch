@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "version": "10.6p1",
+  "releasePage": "https://www.openssh.org/txt/release-10.6",
+  "keyIdentityPage": "https://www.openssh.org/portable.html",
+  "archive": {
+    "url": "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-10.6p1.tar.gz",
+    "sha256": "a9dc9565dffe8640f64d863cd29a32bc4a3dbdec0566a7fc44c5d6ee767d5f39"
+  },
+  "signature": {
+    "url": "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/portable/openssh-10.6p1.tar.gz.asc",
+    "sha256": "1f8fd46ddb5ec95f5bc9e0d7b0fc34ccea3ef8f94a8e3a5d3911434cce7027cf"
+  },
+  "releaseKey": {
+    "url": "https://cdn.openbsd.org/pub/OpenBSD/OpenSSH/RELEASE_KEY.asc",
+    "sha256": "c4a6f4692c9b8e75ec096add049fe0314b3ceff9410321f1e85907cf7a864269"
+  },
+  "primaryFingerprint": "7168B983815A5EEF59A4ADFD2A3F414E736060BA",
+  "signerFingerprint": "7168B983815A5EEF59A4ADFD2A3F414E736060BA",
+  "signatureDigestAlgorithm": "10"
+}

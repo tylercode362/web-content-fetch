@@ -1,5 +1,7 @@
 *
 !Dockerfile
+!openssh-source.lock.json
+!verify-openssh-release.mjs
 !project.json
 !project-updater.mjs
 !lib
