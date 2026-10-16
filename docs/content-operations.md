@@ -1,6 +1,6 @@
 # Bridge 長操作恢復候選
 
-WCF 0.8.0 需要支援 `content.operation.create`／`content.operation.get` 的 Bridge Server 3.6.0。舊 Bridge 回 action_unsupported 時會暫停並顯示 content_operations_unsupported，不回退同步下載。Extension 3.3.0 與既有配對不變。
+WCF 0.8.1 需要支援 `content.operation.create`／`content.operation.get` 的 Bridge Server 3.6.0。舊 Bridge 回 action_unsupported 時會暫停並顯示 content_operations_unsupported，不回退同步下載。Extension 3.3.0 與既有配對不變。
 
 每個邏輯步驟在送出前，先將 requestId、serverInstanceId、payload digest 與狀態保存在既有 job snapshot 的 contentOperation。job.id 仍作取消用 operationKey。HTTP 最長 15 秒，每 2 秒查詢；總等候預算為 2 小時加 5 分鐘。傳輸結果不明只重送相同操作身分；已確認終止的可恢復錯誤，才允許下一次有界嘗試。
 

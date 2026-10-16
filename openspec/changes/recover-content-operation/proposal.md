@@ -9,4 +9,4 @@
 - 結果過期、Bridge instance 改變或舊操作未確認終止時停止自動重跑，保留 checkpoint。
 
 ## Impact
-只改 WCF／Bridge Server 與合成測試；舊同步 API 保留。無新權限、TLS 或驗證放寬，不改站點 Flow 或 Extension。記憶體結果有數量、大小、期限上限；不記錄內容、網址、憑證或結果 bytes。回復舊程式須先停妥活動操作，不能當成安全恢復。部署、重啟、commit／push 未授權。單一 writer 使用本次隔離 worktree。
+只改 WCF／Bridge Server 與合成測試；舊同步 API 保留。無新權限、TLS 或驗證放寬，不改站點 Flow 或 Extension。記憶體結果有數量、大小、期限上限；不記錄內容、網址、憑證或結果 bytes。回復舊程式須先停妥活動操作，不能當成安全恢復。2026-10-16 使用者已明確授權先保存既有 WCF 成果並納入 main，再修已知問題；不包含部署或重啟。單一 writer 使用本次隔離 worktree。
