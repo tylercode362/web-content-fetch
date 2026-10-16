@@ -10,3 +10,6 @@ state/
 .local-state/
 *.log
 *.tmp
+
+# Reinstallable npm cache only; preserve adjacent source and verification files.
+/.review-worktrees/wcf-v1-formal-20261008/cache/_cacache/
