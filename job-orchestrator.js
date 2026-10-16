@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const fsp = require('node:fs/promises');
 const path = require('node:path');
 const { BridgeClient } = require('./bridge-client');
+const { callContentOperation } = require('./content-operation-client');
 const { BRIDGE_URL, CALLBACK_URL } = require('./service-endpoints');
 const { resolveCallbackUrl } = require('./callback-url');
 const { applyBindingToJob, getBinding, isUuid, publicBinding } = require('./binding-store');
@@ -353,6 +354,17 @@ class DownloadOrchestrator {
 
   async readChapterCheckpoint(job, index, suffix = '') {
     return this.readCheckpoint(job, this.chapterCheckpointName(index, suffix));
+  }
+
+  async writeMangaReaderCheckpoint(job, index, chapterUrl, result) {
+    if (!validMangaReaderResult(result, chapterUrl)) throw new Error('manga_reader_checkpoint_invalid');
+    await this.writeChapterCheckpoint(job, index, { kind: 'manga', chapterUrl, readerResult: result }, '-reader');
+  }
+
+  async readMangaReaderCheckpoint(job, index, chapterUrl) {
+    const saved = await this.readChapterCheckpoint(job, index, '-reader');
+    return saved?.kind === 'manga' && saved.chapterUrl === chapterUrl && validMangaReaderResult(saved.readerResult, chapterUrl)
+      ? saved.readerResult : null;
   }
 
   async writeImageCheckpoint(job, index, kind, chapterUrl, evidence, assets) {
@@ -888,7 +900,8 @@ class DownloadOrchestrator {
           this.update(job, { progress: { phase: 'resuming', completed: index + 1, total: chapters.length } });
           continue;
         }
-        const chapterResult = await call({
+        const savedReader = await this.readMangaReaderCheckpoint(job, index, chapter.url);
+        const chapterResult = savedReader || await call({
           url: job.url,
           chapterUrl: chapter.url,
           kind: 'manga',
@@ -898,6 +911,7 @@ class DownloadOrchestrator {
         });
         const evidence = Array.isArray(chapterResult?.images) ? chapterResult.images : [];
         if (evidence.length === 0) throw new Error('manga_chapter_images_missing');
+        if (!savedReader) await this.writeMangaReaderCheckpoint(job, index, chapter.url, chapterResult);
         const assets = await this.reusableImageAssets(job, index, 'manga', chapter.url, evidence);
         const canBatchAssets = isEightComicChapter(chapter, evidence);
         for (let imageIndex = assets.length; imageIndex < evidence.length;) {
@@ -1028,6 +1042,9 @@ class DownloadOrchestrator {
   }
 
   async callWithRetry(job, client, body, signal) {
+    if (client instanceof BridgeClient) {
+      return callContentOperation({ client, job, body, signal, update: this.update });
+    }
     let lastError;
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt += 1) {
       try {
@@ -1099,6 +1116,22 @@ function safeDiagnostic(error) {
   return value || 'job_failed';
 }
 
+function validMangaReaderResult(result, chapterUrl) {
+  if (!result || !Array.isArray(result.images) || result.images.length < 1 || result.images.length > MAX_IMAGES ||
+      (result.success !== undefined && result.success !== true) ||
+      (result.pageCount !== undefined && (!Number.isInteger(result.pageCount) || result.pageCount < 1 || result.pageCount > MAX_PAGES))) return false;
+  try {
+    const source = new URL(chapterUrl);
+    if (result.sourceUrl && new URL(result.sourceUrl).href !== source.href) return false;
+    return result.images.every(image => {
+      const asset = new URL(image.url);
+      return ['http:', 'https:'].includes(asset.protocol) && !asset.username && !asset.password &&
+        (!image.pageUrl || new URL(image.pageUrl).origin === source.origin) &&
+        (image.pageIndex === undefined || (Number.isInteger(image.pageIndex) && image.pageIndex >= 0 && image.pageIndex < MAX_PAGES));
+    });
+  } catch { return false; }
+}
+
 function requiresLinovelManifestRefresh(job, manifest) {
   if (job.kind !== 'novel' || !Array.isArray(manifest?.chapters)) return false;
   try {
@@ -1134,7 +1167,10 @@ function isRecoverableBridgeDiagnostic(value) {
     'browser_navigation_timeout',
     'novel_inline_images_missing',
     'bridge_transport_failed',
-    'secure_transport_failed'
+    'secure_transport_failed',
+    'content_operation_unknown', 'content_operation_expired', 'content_operation_server_changed',
+    'content_operation_unresolved', 'content_operation_capacity', 'content_operation_wait_timeout',
+    'content_operations_unsupported', 'content_operation_stopped'
   ]).has(String(value || '').toLowerCase());
 }
 

@@ -154,6 +154,25 @@ class BridgeClient {
     return assertBridgeSuccess(response);
   }
 
+  async operationServerInstance(signal) {
+    if (!this.session || this.session.expired) await this.connect(signal);
+    return this.serverInstanceId;
+  }
+
+  async createContentOperation(request, operation, options = {}) {
+    if (!this.browserClientId) throw new Error('browser_client_not_configured');
+    return this.authenticatedRequest('content.operation.create', this.browserClientId, {
+      requestId: operation.requestId, serverInstanceId: operation.serverInstanceId, request
+    }, options);
+  }
+
+  async getContentOperation(operation, options = {}) {
+    if (!this.browserClientId) throw new Error('browser_client_not_configured');
+    return this.authenticatedRequest('content.operation.get', this.browserClientId, {
+      requestId: operation.requestId, serverInstanceId: operation.serverInstanceId
+    }, options);
+  }
+
   async cancelContentFetch(operationKey, options = {}) {
     if (!this.browserClientId) throw new Error('browser_client_not_configured');
     const response = await this.authenticatedRequest('content.cancel', this.browserClientId, { operationKey }, options);
