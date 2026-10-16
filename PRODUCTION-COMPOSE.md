@@ -16,3 +16,9 @@ docker compose --env-file .env -f compose.yaml -f compose.production.yaml config
 
 
 參考：[Docker Compose 插值與優先序](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)、[dotenv path](https://github.com/motdotla/dotenv#path)。
+
+另執行以下唯讀服務清單驗證，輸出須包含 `web-content-fetch`：
+
+```sh
+docker compose --env-file .env -f compose.yaml -f compose.production.yaml config --services
+```

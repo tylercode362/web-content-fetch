@@ -42,3 +42,10 @@ rules:
   tasks:
     - 依 vertical slice 排序；未取得 build、test、Compose、OpenSpec 與 security evidence 不得勾選完成。
     - Public protocol 同步更新 schema、client、server、fixture、compatibility test 與文件。
+
+production_environment: |
+  正式非秘密設定由本 repo 管理；主機 .env 與明確加載的 .env.local 皆不進 Git。
+  Compose 後加載檔案優先，shell 值優先；不混用 container env_file 與應用程式 dotenv 的層次。
+  驗證須包含實際服務清單與有效設定，不以空服務 config 或文件敘述當作通過。
+  本輪補 AGENTS.md／openspec/config.yaml 的局部環境架構規範，並修正前一版交付檔數為七檔；不改 WCF 執行期設定。
+  本節不覆蓋 AGENTS.md 的既有 writer、安全、Git、授權與資料保護邊界。
