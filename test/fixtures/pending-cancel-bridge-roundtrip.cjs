@@ -136,5 +136,27 @@ async function conflictHolder() {
   } finally { await f.close(); }
 }
 
-(async () => { await runningAbort(false); await runningAbort(true); await conflictHolder(); })()
+async function restartedCancellation() {
+  const f = await fixture();
+  try {
+    const client = new BridgeClient(f.binding), instance = await client.operationServerInstance();
+    f.binding.expectedFingerprint = client.fingerprint;
+    const holder = { requestId: `${Date.now()}_unrelated`, serverInstanceId: instance };
+    await client.createContentOperation({ url: f.job.url, chapterUrl: 'https://m.manhuagui.com/comic/1/2.html',
+      kind: 'manga', mode: 'chapter', operationKey: 'unrelated-job' }, holder);
+    await until(() => f.counters.runs === 1, 'unrelated holder running');
+    f.job.status = 'cancelling';
+    f.job.contentOperation = { requestId: `${Date.now()}_old`, serverInstanceId: 'previous-instance', state: 'running', digest: 'synthetic' };
+    await f.orchestrator.cancel(f.job.id);
+    assert.equal(f.job.status, 'cancelled');
+    assert.equal(f.job.contentOperation.serverInstanceId, 'previous-instance');
+    assert.equal(f.job.contentOperation.cancellation.confirmedServerInstanceId, instance);
+    assert.deepEqual(f.cleaned, ['checkpoint', 'output']);
+    assert.equal((await client.getContentOperation(holder)).state, 'running');
+    assert.equal(f.counters.runs, 1); assert.equal(f.counters.creates, 1); assert.equal(f.counters.releases, 0);
+    console.log('PASS authenticated replacement-instance cancellation preserves unrelated running holder without creating work');
+  } finally { await f.close(); }
+}
+
+(async () => { await runningAbort(false); await runningAbort(true); await conflictHolder(); await restartedCancellation(); })()
   .catch(error => { console.error(error); process.exitCode = 1; }).finally(() => { global.fetch = realFetch; });

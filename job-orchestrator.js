@@ -597,6 +597,10 @@ class DownloadOrchestrator {
     const failure = code => Object.assign(new Error(code), { code });
     const binding = getBinding(this.config, job.bindingId);
     if (!binding?.serviceCredential || !binding.browserClientId) throw failure('content_operation_cancel_unavailable');
+    if ((job.browserClientId && job.browserClientId !== binding.browserClientId) ||
+        (job.serviceClientId && job.serviceClientId !== binding.serviceClientId)) {
+      throw failure('content_operation_cancel_unconfirmed');
+    }
     const client = new BridgeClient(binding);
     const signal = AbortSignal.timeout(15_000);
     try {
@@ -607,6 +611,30 @@ class DownloadOrchestrator {
         if (status?.success === false && status.code === 'content_operation_unknown') {
           await waitForCancellation(200, undefined, { signal });
           continue;
+        }
+        if (status?.success === false && status.code === 'content_operation_server_changed') {
+          // A fresh authenticated connection fences the old instance's requests.
+          // Require the same browser to have reconnected and no holder of this
+          // job key on the replacement; other jobs/resources may remain busy.
+          if (!binding.expectedFingerprint) throw failure('content_operation_server_changed');
+          const instance = await client.operationServerInstance(signal);
+          if (!operation.serverInstanceId || !instance ||
+              instance === operation.serverInstanceId) throw failure('content_operation_cancel_unconfirmed');
+          const browsers = await client.listBrowserClients({ signal });
+          if (browsers?.success !== true || !Array.isArray(browsers.clients) ||
+              !browsers.clients.some(browser => browser.browserClientId === binding.browserClientId && browser.online === true)) {
+            throw failure('content_operation_cancel_unconfirmed');
+          }
+          const cancellation = await client.cancelContentFetch(job.id, { signal });
+          const confirmed = await client.getContentOperation(operation, { signal });
+          if (cancellation?.success !== true || cancellation.cancelled !== false ||
+              confirmed?.success !== false || confirmed.code !== 'content_operation_server_changed' ||
+              await client.operationServerInstance(signal) !== instance) {
+            throw failure('content_operation_cancel_unconfirmed');
+          }
+          this.update(job, { contentOperation: { ...operation, state: 'cancelled', code: undefined,
+            cancellation: { reason: 'server_changed', confirmedServerInstanceId: instance } } });
+          return;
         }
         if (status?.success === false) throw failure(
           typeof status.code === 'string' && /^[a-z0-9_]{1,120}$/.test(status.code)
