@@ -1,0 +1,4 @@
+services:
+  web-content-fetch:
+    image: ${WEB_CONTENT_FETCH_IMAGE:?Set WEB_CONTENT_FETCH_IMAGE in the host environment file}
+    pull_policy: never

@@ -97,3 +97,10 @@
 
 - 認證設定可使用獨立 config directory；jobs／checkpoints 與 output 不包含可刪的配對資料。保留配對切換須 fail-closed，不新增 legacy migration、credential 或配對方式。
 - 實際搬移前核對來源、目標、服務 UID、存取權限與停機範圍；程式設定支援不等於已核准部署、改權限或刪資料。
+
+## 正式環境設定與環境檔
+
+- 非秘密正式設定與 production overlay 維護於本 repo；不得以根目錄、diagnostics 或其他暫存 override 作為正式設定來源。切換前保留現行容器仍引用的外檔。
+- 主機自己的 `.env` 提供基本值；該主機自己的 `.env.local` 只能明確加載，不複製開發環境檔到正式主機。兩者忽略 Git，只提交無秘密 example。
+- Compose 明確指定 `--env-file .env`，需要本機覆寫時再指定 `--env-file .env.local`；後者優先，既有 shell 值仍優先。這是 Compose 插值，不是整份 container `env_file` 或應用程式 dotenv，不為此新增套件。
+- 依 `PRODUCTION-COMPOSE.md` 核對實際服務清單與有效設定，區分已解析、已驗證與已部署。環境架構不授權合併、部署、重建、認證搬移或安全設定變更；既有 writer、Git 與專案安全規則繼續適用。
