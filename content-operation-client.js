@@ -2,9 +2,11 @@ const crypto = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 
 const terminalRetry = new Set(['browser_client_offline', 'browser_client_disconnected', 'browser_command_timeout',
-  'browser_content_selector_timeout', 'browser_content_ready_timeout', 'browser_navigation_timeout', 'content_operation_stopped']);
+  'browser_content_selector_timeout', 'browser_content_ready_timeout', 'browser_navigation_timeout', 'content_operation_stopped', 'browser_context_lost',
+  'content_reader_incomplete', 'content_reader_images_incomplete', 'content_reader_page_evidence_invalid']);
 const stopped = new Set(['content_operation_unknown', 'content_operation_expired', 'content_operation_server_changed',
-  'content_operation_unresolved', 'content_operation_capacity', 'content_operation_wait_timeout', 'content_operations_unsupported']);
+  'content_operation_unresolved', 'content_operation_capacity', 'content_operation_wait_timeout', 'content_operations_unsupported',
+  'content_operation_release_unconfirmed']);
 
 async function callContentOperation({ client, job, body, signal, update, now = Date.now,
   wait = (ms, stop) => delay(ms, undefined, { signal: stop }), pollMs = 2000, maxWaitMs = 2 * 60 * 60_000 + 5 * 60_000 }) {
@@ -42,6 +44,10 @@ async function callContentOperation({ client, job, body, signal, update, now = D
       let status = await request(stop => client.createContentOperation(body, pending, { signal: stop }));
       while (true) {
         assertStatus(status);
+        if (status.state === 'running' && status.phase === 'recovery_required' && status.code === 'content_operation_release_unconfirmed') {
+          save({ ...pending, state: 'running', code: status.code });
+          throw operationError(status.code);
+        }
         if (['complete', 'error', 'cancelled'].includes(status.state)) {
           const result = status.result;
           if (!result || typeof result.success !== 'boolean') throw operationError('content_operation_unknown');

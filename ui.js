@@ -10,6 +10,13 @@
     error: '失敗',
     cancelled: '已取消'
   };
+  const diagnosticLabels = {
+    content_operation_release_unconfirmed: '無法確認先前工作是否已停止，進度已保留。請確認 Chrome 與 Bridge 的連線後再恢復。',
+    browser_context_lost: '瀏覽器連線已變更，進度已保留。請確認 Chrome 已連線後再恢復。',
+    content_reader_incomplete: '章節頁面尚未完整，進度已保留。請稍後恢復。',
+    content_reader_images_incomplete: '章節圖片尚未完整，進度已保留。請稍後恢復。',
+    content_reader_page_evidence_invalid: '章節頁序驗證失敗，進度已保留。請稍後恢復。'
+  };
   const browserBase = window.location.pathname.startsWith('/web-content-fetch') ? '/web-content-fetch' : '';
   const pendingActions = new Set();
   let bridgeStatus = null;
@@ -227,7 +234,7 @@
     if (job.diagnostic) {
       left.append(node('p', {
         className: 'error-text',
-        textContent: '診斷：' + job.diagnostic
+        textContent: '診斷：' + (diagnosticLabels[job.diagnostic] || job.diagnostic)
       }));
     }
     const outputPanel = node('div', { className: 'outputs' }, [

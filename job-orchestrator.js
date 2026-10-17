@@ -776,7 +776,9 @@ class DownloadOrchestrator {
       if (operation && !['complete', 'error', 'cancelled'].includes(operation.state) && client instanceof BridgeClient) {
         try {
           const instance = await client.operationServerInstance(AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]));
-          if (instance !== operation.serverInstanceId) await this.confirmContentOperationStopped(job);
+          if (instance !== operation.serverInstanceId || operation.code === 'content_operation_release_unconfirmed') {
+            await this.confirmContentOperationStopped(job);
+          }
         } catch (error) {
           if (job.cancelRequested || job.pauseRequested) throw error;
           this.update(job, { status: 'paused', progress: { ...(job.progress || {}), phase: 'paused' }, diagnostic: safeDiagnostic(error) });
@@ -1265,6 +1267,10 @@ function isRetryable(error) {
 function isRecoverableBridgeDiagnostic(value) {
   return new Set([
     'browser_client_disconnected',
+    'browser_context_lost',
+    'content_reader_incomplete',
+    'content_reader_images_incomplete',
+    'content_reader_page_evidence_invalid',
     'browser_client_offline',
     'browser_command_timeout',
     'browser_content_selector_timeout',
@@ -1275,7 +1281,7 @@ function isRecoverableBridgeDiagnostic(value) {
     'secure_transport_failed',
     'content_operation_unknown', 'content_operation_expired', 'content_operation_server_changed',
     'content_operation_unresolved', 'content_operation_capacity', 'content_operation_wait_timeout',
-    'content_operations_unsupported', 'content_operation_stopped'
+    'content_operations_unsupported', 'content_operation_stopped', 'content_operation_release_unconfirmed'
   ]).has(String(value || '').toLowerCase());
 }
 

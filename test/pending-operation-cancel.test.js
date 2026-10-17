@@ -140,3 +140,18 @@ test('resume on the same Bridge instance preserves pending operation for result 
   assert.deepEqual(f.job.contentOperation, identity);
   assert.deepEqual(f.cleaned, []);
 });
+
+test('same-instance unconfirmed cleanup is confirmed before resume reads checkpoints', async t => {
+  const f = await fixture(t);
+  f.job.contentOperation.code = 'content_operation_release_unconfirmed';
+  const original = BridgeClient.prototype.operationServerInstance;
+  BridgeClient.prototype.operationServerInstance = async () => f.job.contentOperation.serverInstanceId;
+  t.after(() => { BridgeClient.prototype.operationServerInstance = original; });
+  let confirmed = false;
+  f.orchestrator.confirmContentOperationStopped = async () => { confirmed = true; f.job.contentOperation.state = 'cancelled'; };
+  f.orchestrator.readJobManifest = async () => { assert.equal(confirmed, true); throw Error('browser_client_offline'); };
+  await f.orchestrator.run(f.job);
+  assert.equal(confirmed, true);
+  assert.equal(f.job.status, 'paused');
+  await fs.access(f.checkpoint); await fs.access(f.output);
+});

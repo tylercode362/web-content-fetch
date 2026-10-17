@@ -25,6 +25,30 @@ test('lost acceptance reply retries the same durable request and executes once',
 
 const update = (job, change) => Object.assign(job, change);
 const body = { operationKey: 'job', mode: 'chapter', url: 'https://example.test/chapter' };
+for (const code of ['content_reader_incomplete', 'content_reader_images_incomplete', 'content_reader_page_evidence_invalid']) {
+  test(`confirmed ${code} retries with a fresh identity and preserves the three-attempt bound`, async () => {
+    const identities = [];
+    const client = clientFor(null);
+    client.createContentOperation = async (_body, operation) => {
+      identities.push(operation.requestId);
+      return { success: true, state: 'error', result: { success: false, code } };
+    };
+    const job = {};
+    await assert.rejects(callContentOperation({ client, job, body, update, wait: async () => {} }), { code });
+    assert.equal(identities.length, 3);
+    assert.equal(new Set(identities).size, 3);
+    assert.equal(job.contentOperation.state, 'error');
+    assert.equal(job.contentOperation.code, code);
+  });
+
+  test(`a running ${code} hint cannot allocate another request`, async () => {
+    let creates = 0;
+    const client = clientFor({ success: true, state: 'complete', result: { success: true } });
+    client.createContentOperation = async () => { creates++; return { success: true, state: 'running', code }; };
+    await callContentOperation({ client, job: {}, body, update, wait: async () => {} });
+    assert.equal(creates, 1);
+  });
+}
 function clientFor(result) {
   return { operationServerInstance: async () => 'instance', createContentOperation: async () => result,
     getContentOperation: async () => result };
@@ -100,6 +124,32 @@ test('failure to persist identity prevents dispatch', async () => {
   client.createContentOperation = async () => { throw Error('must not dispatch'); };
   await assert.rejects(callContentOperation({ client, job: {}, body,
     update: () => { throw Error('disk_write_failed'); } }), /disk_write_failed/);
+});
+
+test('recovery-required cleanup pauses durably without a second dispatch', async () => {
+  let creates = 0;
+  const job = {};
+  const client = clientFor({ success: true });
+  client.createContentOperation = async () => {
+    creates++;
+    return { success: true, state: 'running', phase: 'recovery_required', code: 'content_operation_release_unconfirmed' };
+  };
+  await assert.rejects(callContentOperation({ client, job, body, update,
+    wait: async () => { throw Error('must not wait for the normal long-operation deadline'); }
+  }), { code: 'content_operation_release_unconfirmed' });
+  assert.equal(creates, 1);
+  assert.equal(job.contentOperation.state, 'running');
+  assert.equal(job.contentOperation.code, 'content_operation_release_unconfirmed');
+});
+
+test('confirmed context loss permits a bounded new request', async () => {
+  let creates = 0;
+  const client = clientFor({ success: true });
+  client.createContentOperation = async () => ++creates === 1
+    ? { success: true, state: 'error', result: { success: false, code: 'browser_context_lost' } }
+    : { success: true, state: 'complete', result: { success: true } };
+  await callContentOperation({ client, job: {}, body, update, wait: async () => {} });
+  assert.equal(creates, 2);
 });
 
 test('a different step after confirmed completion does not depend on an expired old result', async () => {
