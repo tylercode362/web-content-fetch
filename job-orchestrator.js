@@ -34,6 +34,7 @@ class DownloadOrchestrator {
     );
     this.draining = false;
     this.runningJobs = new Map();
+    this.deletingJobs = new Set();
     this.runningFqdns = new Set();
     this.controllers = new Map();
     this.clients = new Map();
@@ -564,6 +565,7 @@ class DownloadOrchestrator {
   }
 
   async cancel(jobId) {
+    if (this.deletingJobs.has(jobId)) throw new Error('job_deleting');
     const job = this.jobs.get(jobId);
     if (!job) return null;
     if (isTerminal(job.status)) return job;
@@ -674,19 +676,34 @@ class DownloadOrchestrator {
   }
 
   async delete(jobId) {
+    if (this.deletingJobs.has(jobId)) throw new Error('job_deleting');
     const job = this.jobs.get(jobId);
     if (!job) return null;
     if (!isTerminal(job.status)) throw new Error('job_not_terminal');
     if (this.runningJobs.has(job.id)) throw new Error('job_still_running');
 
-    const removedOutputs = this.publishedOutputNames(job);
-    this.publishedOutputPaths(job);
-    await this.removeJobFiles(job);
-    await this.removePublishedOutputs(job);
-    this.jobs.delete(job.id);
-    await this.removeJob(job.id);
-    job.deletedOutputCount = removedOutputs.length;
-    return job;
+    this.deletingJobs.add(jobId);
+    try {
+      const removedOutputs = this.publishedOutputNames(job);
+      this.publishedOutputPaths(job);
+      if (job.contentOperation && (!['complete', 'error', 'cancelled'].includes(job.contentOperation.state) ||
+          isContentOperationConflict(job.contentOperation.code))) {
+        await this.confirmContentOperationStopped(job);
+      }
+      await this.removeJobFiles(job);
+      await this.removePublishedOutputs(job);
+      this.jobs.delete(job.id);
+      try {
+        await this.removeJob(job.id);
+      } catch (error) {
+        this.jobs.set(job.id, job);
+        throw error;
+      }
+      job.deletedOutputCount = removedOutputs.length;
+      return job;
+    } finally {
+      this.deletingJobs.delete(jobId);
+    }
   }
 
   pause(jobId) {
@@ -711,6 +728,7 @@ class DownloadOrchestrator {
   }
 
   resume(jobId) {
+    if (this.deletingJobs.has(jobId)) throw new Error('job_deleting');
     const job = this.jobs.get(jobId);
     const failedJob = job?.status === 'error';
     if (!job || job.status === 'complete' || job.status === 'cancelled' ||
@@ -754,6 +772,17 @@ class DownloadOrchestrator {
       }
     });
     try {
+      const operation = job.contentOperation;
+      if (operation && !['complete', 'error', 'cancelled'].includes(operation.state) && client instanceof BridgeClient) {
+        try {
+          const instance = await client.operationServerInstance(AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]));
+          if (instance !== operation.serverInstanceId) await this.confirmContentOperationStopped(job);
+        } catch (error) {
+          if (job.cancelRequested || job.pauseRequested) throw error;
+          this.update(job, { status: 'paused', progress: { ...(job.progress || {}), phase: 'paused' }, diagnostic: safeDiagnostic(error) });
+          return;
+        }
+      }
       const callback = {
         callbackUrl: resolveCallbackUrl(this.config.callbackUrl),
         callbackToken: job.callbackToken,
@@ -987,7 +1016,9 @@ class DownloadOrchestrator {
         if (evidence.length === 0) throw new Error('manga_chapter_images_missing');
         if (!savedReader) await this.writeMangaReaderCheckpoint(job, index, chapter.url, chapterResult);
         const assets = await this.reusableImageAssets(job, index, 'manga', chapter.url, evidence);
-        const canBatchAssets = isEightComicChapter(chapter, evidence);
+        const canBatchAssets = isEightComicChapter(chapter, evidence) ||
+          (chapterResult.assetBatchSupported === true && evidence.every(image =>
+            String(image.pageUrl || chapter.url) === chapter.url));
         for (let imageIndex = assets.length; imageIndex < evidence.length;) {
           this.assertActive(job);
           const batch = canBatchAssets

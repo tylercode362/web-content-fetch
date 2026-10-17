@@ -1,0 +1,6 @@
+# Local recovery uses an already verified immutable runtime image.
+services:
+  web-content-fetch:
+    image: ${WEB_CONTENT_FETCH_IMAGE:?Set the verified recovery runtime image ID}
+    build: !reset null
+    pull_policy: never

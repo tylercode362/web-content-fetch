@@ -96,3 +96,47 @@ for (const code of ['content_operation_conflict', 'content_operation_payload_con
   await assert.rejects(f.orchestrator.cancel(f.job.id), { code: 'content_operation_unresolved' });
   assert.equal(f.job.status, 'cancelling'); assert.equal(f.job.contentOperation.code, code); assert.deepEqual(f.cleaned, []);
 });
+
+test('resume fences unresolved remote work before reading checkpoints and preserves files', async t => {
+  const f = await fixture(t);
+  const original = BridgeClient.prototype.operationServerInstance;
+  BridgeClient.prototype.operationServerInstance = async () => 'replacement';
+  t.after(() => { BridgeClient.prototype.operationServerInstance = original; });
+  let confirmed = false;
+  f.orchestrator.confirmContentOperationStopped = async () => { confirmed = true; f.job.contentOperation.state = 'cancelled'; };
+  f.orchestrator.readJobManifest = async () => { assert.equal(confirmed, true); throw new Error('browser_client_offline'); };
+  await f.orchestrator.run(f.job);
+  assert.equal(confirmed, true);
+  assert.equal(f.job.status, 'paused');
+  assert.deepEqual(f.cleaned, []);
+  await fs.access(f.checkpoint); await fs.access(f.output);
+});
+
+test('resume with unconfirmed cleanup stays paused without new content work', async t => {
+  const f = await fixture(t), identity = { ...f.job.contentOperation };
+  const original = BridgeClient.prototype.operationServerInstance;
+  BridgeClient.prototype.operationServerInstance = async () => 'replacement';
+  t.after(() => { BridgeClient.prototype.operationServerInstance = original; });
+  f.orchestrator.confirmContentOperationStopped = async () => { throw Object.assign(new Error('content_operation_cancel_unconfirmed'), { code: 'content_operation_cancel_unconfirmed' }); };
+  f.orchestrator.readJobManifest = async () => { assert.fail('must confirm before new work'); };
+  await f.orchestrator.run(f.job);
+  assert.equal(f.job.status, 'paused');
+  assert.equal(f.job.diagnostic, 'content_operation_cancel_unconfirmed');
+  assert.deepEqual(f.job.contentOperation, identity);
+  assert.deepEqual(f.cleaned, []);
+  await fs.access(f.checkpoint); await fs.access(f.output);
+});
+
+test('resume on the same Bridge instance preserves pending operation for result replay', async t => {
+  const f = await fixture(t), identity = { ...f.job.contentOperation };
+  const original = BridgeClient.prototype.operationServerInstance;
+  BridgeClient.prototype.operationServerInstance = async () => identity.serverInstanceId;
+  t.after(() => { BridgeClient.prototype.operationServerInstance = original; });
+  f.orchestrator.confirmContentOperationStopped = async () => { assert.fail('same instance must retain replay identity'); };
+  f.orchestrator.readJobManifest = async () => { throw new Error('browser_client_offline'); };
+  await f.orchestrator.run(f.job);
+  assert.equal(f.job.status, 'paused');
+  assert.equal(f.job.diagnostic, 'browser_client_offline');
+  assert.deepEqual(f.job.contentOperation, identity);
+  assert.deepEqual(f.cleaned, []);
+});
