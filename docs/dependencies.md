@@ -11,6 +11,7 @@
 | `salty-crypto` | `1.0.0-rc.4` | Bridge Noise secure client | MIT |
 | `sanitize-html` | `2.17.7` | 小說 HTML 清理 | MIT |
 | `sharp` | `0.35.5` | 圖片解碼、縮放、JPEG 最佳化 | Apache-2.0；底層影像元件依 lockfile 授權 |
+| `@fission-ai/openspec` | `1.14.3` | 獨立 tools 階段的規格驗證 | MIT；[官方 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.14.3)，不進入正式 runtime |
 
 不把 Chrome profile、cookie、token、GitHub 認證或 Docker socket 放入容器。網路只在 runtime 連到明確設定的 Chrome Bridge；OpenSpec tools 容器執行時無網路。
 

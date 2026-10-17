@@ -41,5 +41,5 @@ CMD ["sh", "-c", "node --test test/*.test.js"]
 FROM base AS tools
 WORKDIR /opt/openspec
 RUN npm init -y >/dev/null 2>&1 \
-    && npm install --ignore-scripts @fission-ai/openspec@1.8.0
+    && npm install --ignore-scripts @fission-ai/openspec@1.14.3
 USER app
