@@ -12,6 +12,7 @@
 | `sanitize-html` | `2.17.7` | 小說 HTML 清理 | MIT |
 | `sharp` | `0.35.5` | 圖片解碼、縮放、JPEG 最佳化 | Apache-2.0；底層影像元件依 lockfile 授權 |
 | `@fission-ai/openspec` | `1.14.3` | 獨立 tools 階段的規格驗證 | MIT；[官方 release](https://github.com/Fission-AI/OpenSpec/releases/tag/v1.14.3)，不進入正式 runtime |
+| `opencc-js` | `1.4.2` | 漫畫書名與卷／話連結名稱離線轉臺灣繁體字形 | MIT AND Apache-2.0；[來源](https://github.com/nk2028/opencc-js)，字典隨套件提供，無執行期相依套件或網路查詢 |
 
 不把 Chrome profile、cookie、token、GitHub 認證或 Docker socket 放入容器。網路只在 runtime 連到明確設定的 Chrome Bridge；OpenSpec tools 容器執行時無網路。
 

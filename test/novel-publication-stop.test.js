@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 // External transport and book generation are synthetic; the real orchestrator runs.
 require.cache[require.resolve('../bridge-client')] = {exports:{BridgeClient:class {constructor(){this.paired=true;} cancelContentFetch(){return Promise.resolve();}}}};
-require.cache[require.resolve('../epub-writer')] = {exports:{cleanBookTitle:value=>value,writeNovelEpub:async()=>({files:['synthetic-stage.epub']})}};
+require.cache[require.resolve('../epub-writer')] = {exports:{cleanBookTitle:value=>value,cleanMangaTitle:value=>value,writeNovelEpub:async()=>({files:['synthetic-stage.epub']})}};
 const {DownloadOrchestrator} = require('../job-orchestrator');
 
 for(const point of ['publish','cleanup']) for(const action of ['cancel','pause']) {

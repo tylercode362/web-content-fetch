@@ -23,6 +23,6 @@ const load = Module._load;
 Module._load = function(request, parent, isMain) {
   if (request === 'jszip') return class { constructor() { throw Error('archive_not_in_fixture'); } };
   if (request === './bridge-client') return { BridgeClient: class { constructor() { if (!process.env.WCF_TEST_QUEUE_ONLY) throw Error('bridge_call_not_expected'); this.paired = false; } } };
-  if (request === './epub-writer') return { cleanBookTitle: value => value };
+  if (request === './epub-writer') return { cleanBookTitle: value => value, cleanMangaTitle: value => value };
   return load.call(this, request, parent, isMain);
 };

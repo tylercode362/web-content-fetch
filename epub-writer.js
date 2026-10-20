@@ -6,6 +6,7 @@ const path = require('node:path');
 const JSZip = require('jszip');
 const sanitizeHtml = require('sanitize-html');
 const sharp = require('sharp');
+const toTraditional = require('opencc-js').Converter({ from: 'cn', to: 'tw' });
 const execFileAsync = promisify(execFile);
 
 const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
@@ -45,6 +46,10 @@ function isAdvertisementAsset(asset) {
     asset?.name, asset?.filename
   ].filter(Boolean).join(' ');
   return AD_MARKER_RE.test(values) || AD_TEXT_RE.test(values);
+}
+
+function cleanMangaTitle(value, fallback = '漫畫') {
+  return toTraditional(cleanBookTitle(value, fallback));
 }
 
 async function writeNovelEpub({ outputDir, title, chapters }) {
@@ -101,8 +106,8 @@ async function writeNovelEpub({ outputDir, title, chapters }) {
 async function writeMangaChapterEpub({ outputDir, title, chapterTitle, chapterIndex, images }) {
   const contentImages = Array.isArray(images) ? images.filter(image => !isAdvertisementAsset(image)) : [];
   if (contentImages.length === 0) throw new Error('manga_chapter_has_no_images');
-  const bookTitle = cleanBookTitle(title, '漫畫');
-  const cleanChapterTitle = cleanBookTitle(chapterTitle || `第 ${chapterIndex + 1} 章`, `第 ${chapterIndex + 1} 章`);
+  const bookTitle = cleanMangaTitle(title, '漫畫');
+  const cleanChapterTitle = cleanMangaTitle(chapterTitle, `第 ${chapterIndex + 1} 章`);
   const imageEntries = [];
   for (let index = 0; index < contentImages.length; index += 1) {
     imageEntries.push(await optimizeImage(contentImages[index], index));
@@ -112,7 +117,7 @@ async function writeMangaChapterEpub({ outputDir, title, chapterTitle, chapterIn
     title: `${cleanChapterTitle} ${index + 1}`,
     image
   }));
-  const base = `${slugify(bookTitle)}-chapter-${String(chapterIndex + 1).padStart(4, '0')}`;
+  const base = `${slugify(bookTitle, 96)}-${slugify(cleanChapterTitle, 90)}`;
   const filename = `${base}.epub`;
   const epubPath = path.join(outputDir, filename);
   await writeEpub({
@@ -339,12 +344,18 @@ function escapeXml(value) {
   return String(value).replace(/[<>&'\"]/g, character => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[character]));
 }
 
-function slugify(value) {
-  const normalized = cleanBookTitle(value, 'book')
+function slugify(value, maxBytes = Infinity) {
+  let normalized = cleanBookTitle(value, 'book')
     .replace(/[^\p{L}\p{N}]+/gu, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, MAX_FILENAME_STEM_LENGTH)
     .replace(/^-+|-+$/g, '');
+  const characters = Array.from(normalized);
+  while (Buffer.byteLength(normalized, 'utf8') > maxBytes) {
+    characters.pop();
+    normalized = characters.join('');
+  }
+  normalized = normalized.replace(/-+$/g, '');
   return normalized || 'book';
 }
 
@@ -361,6 +372,7 @@ module.exports = {
   optimizeImage,
   sanitizeNovelHtml,
   cleanBookTitle,
+  cleanMangaTitle,
   writeMangaChapterEpub,
   writeNovelEpub
 };

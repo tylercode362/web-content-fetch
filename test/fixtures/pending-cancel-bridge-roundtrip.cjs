@@ -20,6 +20,7 @@ const { BridgeClient } = require('../../bridge-client');
 // These cancellation tests never generate EPUBs. No image/native dependency is replaced in production.
 require.cache[require.resolve('../../epub-writer')] = { exports: {
   cleanBookTitle() { throw Error('epub_generation_out_of_scope'); },
+  cleanMangaTitle() { throw Error('epub_generation_out_of_scope'); },
   writeMangaChapterEpub() { throw Error('epub_generation_out_of_scope'); },
   writeNovelEpub() { throw Error('epub_generation_out_of_scope'); }
 } };

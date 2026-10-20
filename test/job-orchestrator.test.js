@@ -460,7 +460,7 @@ test('8Comic manga resumes after a failed image batch without refetching complet
       };
       if (body.mode === 'chapter') return {
         success: true,
-        title: '第一章',
+        title: '閱讀器誤標第99話',
         images: Array.from({ length: 9 }, (_value, index) => ({
           url: `https://img0.8comic.com/0/26490/1/${String(index + 1).padStart(3, '0')}_abc.jpg`,
           pageUrl: chapterUrl,
@@ -499,8 +499,8 @@ test('8Comic manga resumes after a failed image batch without refetching complet
   assert.equal(job.outputGroups.length, 1);
   assert.equal(job.outputGroups[0].title, '第一章');
   assert.equal(publishedSnapshots.length > 0, true);
-  assert.equal(job.outputs[0], '阿邦-chapter-0001.epub');
-  assert.equal(job.outputs[1], '阿邦-chapter-0001.kepub.epub');
+  assert.equal(job.outputs[0], '阿邦-第一章.epub');
+  assert.equal(job.outputs[1], '阿邦-第一章.kepub.epub');
   assert.doesNotMatch(job.outputs[0], /job-manga-batch|[0-9a-f]{8}-[0-9a-f-]{27}/i);
 });
 
@@ -537,6 +537,27 @@ test('published output filenames omit job UUIDs and avoid same-title collisions'
   assert.ok(secondPublished.every(name => !name.includes(secondJob.id)));
   assert.equal(await fs.readFile(path.join(outputDir, names[0]), 'utf8'), 'first');
   assert.equal(await fs.readFile(path.join(outputDir, secondPublished[0]), 'utf8'), 'second');
+});
+
+test('duplicate link titles in one manga job preserve completed chapters and paired filenames', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'wcf-manga-duplicate-'));
+  const job = { id: 'same-job', outputs: [], outputGroups: [] };
+  const outputDir = path.join(root, 'output');
+  const orchestrator = new DownloadOrchestrator({
+    jobs: new Map([[job.id, job]]), config: normalizeConfig({}), saveConfig: async () => {},
+    outputDir, checkpointDir: path.join(root, 'checkpoints'),
+    update(value, change) { Object.assign(value, change); }
+  });
+  const stage = await orchestrator.ensureStage(job);
+  const names = ['書名-單行本-第01卷.epub', '書名-單行本-第01卷.kepub.epub'];
+  for (const name of names) await fs.writeFile(path.join(stage, name), 'first volume');
+  const first = await orchestrator.publishOutputs(job, names.map(name => path.join(stage, name)));
+  job.outputGroups = [{ chapterIndex: 0, title: '單行本 第01卷', files: first }];
+  for (const name of names) await fs.writeFile(path.join(stage, name), 'second volume');
+  const second = await orchestrator.publishOutputs(job, names.map(name => path.join(stage, name)));
+  assert.deepEqual(second, ['書名-單行本-第01卷-2.epub', '書名-單行本-第01卷-2.kepub.epub']);
+  for (const name of first) assert.equal(await fs.readFile(path.join(outputDir, name), 'utf8'), 'first volume');
+  for (const name of second) assert.equal(await fs.readFile(path.join(outputDir, name), 'utf8'), 'second volume');
 });
 
 test('recoverable disconnect error jobs resume without removing checkpoints', async () => {

@@ -4,7 +4,7 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 require.cache[require.resolve('../bridge-client')] = {exports:{BridgeClient:class {}}};
-require.cache[require.resolve('../epub-writer')] = {exports:{cleanBookTitle:v=>v,writeNovelEpub:async()=>{},writeMangaChapterEpub:async()=>{}}};
+require.cache[require.resolve('../epub-writer')] = {exports:{cleanBookTitle:v=>v,cleanMangaTitle:v=>v,writeNovelEpub:async()=>{},writeMangaChapterEpub:async()=>{}}};
 const {DownloadOrchestrator} = require('../job-orchestrator');
 test('WCF50-05 partial publication retains ownership for explicit cleanup', async () => {
  const root = await fs.mkdtemp(path.join(os.tmpdir(),'wcf-publication-'));

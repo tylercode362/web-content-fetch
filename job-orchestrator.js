@@ -8,7 +8,7 @@ const { callContentOperation } = require('./content-operation-client');
 const { BRIDGE_URL, CALLBACK_URL } = require('./service-endpoints');
 const { resolveCallbackUrl } = require('./callback-url');
 const { applyBindingToJob, getBinding, isUuid, publicBinding } = require('./binding-store');
-const { cleanBookTitle, writeMangaChapterEpub, writeNovelEpub } = require('./epub-writer');
+const { cleanBookTitle, cleanMangaTitle, writeMangaChapterEpub, writeNovelEpub } = require('./epub-writer');
 
 const MAX_CHAPTERS = 2000;
 const MAX_PAGES = 1000;
@@ -435,6 +435,7 @@ class DownloadOrchestrator {
       return { source, name };
     });
     const owned = new Set(this.publishedOutputNames(job));
+    const completed = new Set((job.outputGroups || []).flatMap(group => group.files || []));
     const reserved = new Set();
     const assignments = new Map();
     const groups = new Map();
@@ -454,7 +455,7 @@ class DownloadOrchestrator {
         for (const name of names) {
           try {
             const stat = await fsp.lstat(path.join(this.outputDir, name));
-            if (!owned.has(name) || !stat.isFile()) {
+            if (!owned.has(name) || completed.has(name) || !stat.isFile()) {
               available = false;
               break;
             }
@@ -807,7 +808,7 @@ class DownloadOrchestrator {
       const chapters = Array.isArray(manifest?.chapters) ? manifest.chapters : [];
       if (chapters.length === 0) throw new Error('chapter_list_empty');
       const fallbackTitle = (job.kind === 'novel' ? '小說' : '漫畫') + ' ' + job.id;
-      const title = cleanBookTitle(manifest.title || job.title || fallbackTitle, fallbackTitle);
+      const title = (job.kind === 'manga' ? cleanMangaTitle : cleanBookTitle)(manifest.title || job.title || fallbackTitle, fallbackTitle);
       job.title = title;
       await this.ensureStage(job);
       if (!savedManifest) await this.writeJobManifest(job, title, chapters);
@@ -992,13 +993,13 @@ class DownloadOrchestrator {
         const savedChapter = await this.readChapterCheckpoint(job, index);
         const resumedFiles = await this.existingPublishedFiles(job, savedChapter?.files);
         if (resumedFiles) {
-          await this.recordMangaOutput(job, index, cleanBookTitle(savedChapter.title || chapter.title, `第 ${index + 1} 章`), savedChapter.files);
+          await this.recordMangaOutput(job, index, cleanMangaTitle(savedChapter.title || chapter.title, `第 ${index + 1} 章`), savedChapter.files);
           this.update(job, { progress: { phase: 'resuming', completed: index + 1, total: chapters.length } });
           continue;
         }
         const stagedFiles = await this.existingStageFiles(job, savedChapter?.files);
         if (stagedFiles) {
-          const chapterTitle = cleanBookTitle(savedChapter.title || chapter.title, `第 ${index + 1} 章`);
+          const chapterTitle = cleanMangaTitle(savedChapter.title || chapter.title, `第 ${index + 1} 章`);
           const published = await this.publishOutputs(job, stagedFiles);
           await this.recordMangaOutput(job, index, chapterTitle, published);
           await this.writeChapterCheckpoint(job, index, { title: chapterTitle, files: published });
@@ -1095,7 +1096,7 @@ class DownloadOrchestrator {
           chapterIndex: index,
           images: assets
         });
-        const chapterTitle = cleanBookTitle(chapter.title || chapterResult.title || '第 ' + (index + 1) + ' 章', '第 ' + (index + 1) + ' 章');
+        const chapterTitle = cleanMangaTitle(chapter.title || chapterResult.title || '第 ' + (index + 1) + ' 章', '第 ' + (index + 1) + ' 章');
         const published = await this.publishOutputs(job, output.files);
         await this.recordMangaOutput(job, index, chapterTitle, published);
         await this.writeChapterCheckpoint(job, index, { title: chapterTitle, files: published });

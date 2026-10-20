@@ -63,7 +63,38 @@ test('book titles remove site suffixes and produce Kobo-safe short filenames', a
     chapterIndex: 0,
     images: [{ data: await png(900, 1200, '#00ff00'), alt: '頁一' }]
   });
-  assert.equal(path.basename(manga.epubPath), '勇者斗惡龍-達伊的大冒險-chapter-0001.epub');
+  assert.equal(path.basename(manga.epubPath), '勇者鬥惡龍-達伊的大冒險-第-1-話.epub');
+});
+
+test('manga names preserve link volume and episode labels in traditional Chinese', async () => {
+  const outputDir = await tempOutput();
+  const images = [{ data: await png(80, 120, '#00ff00') }];
+  const title = '魔术师的第二人生漫画_來源';
+  for (const [chapterTitle, chapterIndex, label] of [
+    ['单话 第20话', 21, '單話-第20話'],
+    ['单行本 第01卷', 22, '單行本-第01卷'],
+    ['番外篇 后记', 23, '番外篇-後記']
+  ]) {
+    const result = await writeMangaChapterEpub({ outputDir, title, chapterTitle, chapterIndex, images });
+    assert.equal(path.basename(result.epubPath), `魔術師的第二人生-${label}.epub`);
+    assert.equal(result.kepubPath, result.epubPath.replace(/\.epub$/, '.kepub.epub'));
+    assert.doesNotMatch(result.filename, /chapter-|0022|0023/);
+    const zip = await readZip(result.epubPath);
+    assert.ok((await zip.file('OEBPS/content.opf').async('text')).includes(result.title));
+    assert.equal(await fs.stat(result.kepubPath).then(stat => stat.isFile()), true);
+  }
+});
+
+test('long manga names retain volume identity and unsafe link titles stay within output directory', async () => {
+  const outputDir = await tempOutput();
+  const images = [{ data: await png(80, 120, '#00ff00') }];
+  const result = await writeMangaChapterEpub({ outputDir, title: '很長的漫畫書名'.repeat(30),
+    chapterTitle: '<b>单行本 第01卷</b> ../../ :\u0000 | 8comic.com', chapterIndex: 22, images });
+  assert.match(result.filename, /單行本-第01卷\.epub$/);
+  assert.ok(result.filename.length < 130);
+  assert.equal(path.dirname(result.epubPath), outputDir);
+  const fallback = await writeMangaChapterEpub({ outputDir, title: '漫畫', chapterTitle: '', chapterIndex: 22, images });
+  assert.match(fallback.filename, /第-23-章\.epub$/);
 });
 
 test('novel and manga outputs exclude advertisement markup and assets', async () => {
